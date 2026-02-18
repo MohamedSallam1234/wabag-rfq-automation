@@ -1,0 +1,149 @@
+[project]
+name = "wabag-rfq-backend"
+version = "0.1.0"
+description = "WABAG RFQ Automation – FastAPI backend"
+requires-python = ">=3.12"
+dependencies = [
+    # FastAPI stack
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "python-multipart>=0.0.18",
+    "pydantic-settings>=2.7",
+
+    # Supabase / database
+    "supabase>=2.13",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+
+    # Document processing
+    "pypdf>=5.4",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "pillow>=11.1",
+
+    # LLM providers (async HTTP)
+    "httpx>=0.28",
+
+    # RFQ generation
+    "reportlab>=4.2",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.1",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pre-commit>=4.1",
+    "commitizen>=4.4",
+    # mypy type stubs for our dependencies
+    "types-requests>=2.32",
+    "sqlalchemy[mypy]>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app"]
+
+# ── Ruff: PEP 8 strict linting + formatting ─────────────
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Enable broad rule sets for strict PEP 8 compliance:
+#   E/W  = pycodestyle errors & warnings (core PEP 8)
+#   F    = pyflakes (unused imports, undefined names)
+#   I    = isort (import ordering per PEP 8)
+#   N    = pep8-naming (class, function, variable naming conventions)
+#   UP   = pyupgrade (use modern Python 3.12+ syntax)
+#   B    = flake8-bugbear (common bug patterns)
+#   SIM  = flake8-simplify (unnecessary complexity)
+#   RUF  = ruff-specific rules
+#   D    = pydocstyle (docstring conventions)
+#   ANN  = flake8-annotations (enforce type annotations)
+#   S    = flake8-bandit (security issues)
+#   C4   = flake8-comprehensions (better list/dict/set comprehensions)
+#   PT   = flake8-pytest-style (pytest best practices)
+#   RET  = flake8-return (consistent return statements)
+#   ARG  = flake8-unused-arguments
+#   PL   = pylint rules via ruff
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF",
+    "D", "ANN", "S", "C4", "PT", "RET", "ARG", "PL",
+]
+ignore = [
+    "D100",   # missing docstring in public module (too noisy for skeleton)
+    "D104",   # missing docstring in public package (__init__.py)
+    "D203",   # conflicts with D211 (no-blank-line-before-class)
+    "D213",   # conflicts with D212 (multi-line-summary-second-line)
+    "ANN101", # deprecated: type annotation for self
+    "ANN102", # deprecated: type annotation for cls
+    "ANN401", # allow typing.Any in some places
+    "S101",   # allow assert in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "D",      # don't require docstrings in tests
+    "ANN",    # don't require annotations in tests
+    "S101",   # assert is fine in tests
+    "ARG",    # unused fixtures are normal in tests
+    "PLR2004",# magic values are fine in tests
+]
+"alembic/**/*.py" = ["D", "ANN", "INP001"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ── Mypy: strict static type checking ───────────────────
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
+
+[[tool.mypy.overrides]]
+module = ["supabase.*", "realtime.*", "postgrest.*", "storage3.*", "gotrue.*"]
+ignore_missing_imports = true
+
+# ── Pytest + Coverage ────────────────────────────────────
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["src/app"]
+
+# ── Commitizen: Conventional Commits config ──────────────
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_files = ["pyproject.toml:^version"]
+allowed_prefixes = ["Merge", "Revert", "Initial"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]
+show_missing = true

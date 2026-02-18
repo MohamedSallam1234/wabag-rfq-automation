@@ -1,0 +1,113 @@
+# ──────────────────────────────────────────────────────────
+# Pre-commit hooks
+#
+# Install:  pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
+# Run all:  pre-commit run --all-files
+# Update:   pre-commit autoupdate
+# ──────────────────────────────────────────────────────────
+
+default_language_version:
+  python: python3.12
+
+repos:
+  # ────────────────────────────────────────────────────────
+  # Built-in hooks from pre-commit
+  # These catch basic mistakes before they enter the repo.
+  # ────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # CONFLICT MARKERS: fails if any file contains <<<<<<<, =======, >>>>>>>
+      # This guarantees no merge conflict debris ever gets committed.
+      - id: check-merge-conflict
+
+      # Prevents giant files from being committed (default 500KB)
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+      # Ensures files end with a newline (POSIX standard)
+      - id: end-of-file-fixer
+
+      # Strips trailing whitespace from all lines
+      - id: trailing-whitespace
+
+      # Validates YAML syntax (catches broken CI workflows)
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+
+      # Validates TOML syntax (catches broken pyproject.toml)
+      - id: check-toml
+
+      # Validates JSON syntax
+      - id: check-json
+
+      # Prevents committing to main/develop directly
+      # Forces feature-branch workflow
+      - id: no-commit-to-branch
+        args: ["--branch", "main", "--branch", "develop"]
+
+      # Detects private keys accidentally staged
+      - id: detect-private-key
+
+      # Catches files that would conflict on case-insensitive filesystems
+      - id: check-case-conflict
+
+  # ────────────────────────────────────────────────────────
+  # Ruff: PEP 8 linting + auto-formatting
+  # Runs the same checks as CI but locally, before commit.
+  # ────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      # Lint: checks PEP 8 rules, auto-fixes what it can
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        types_or: [python, pyi]
+
+      # Format: applies consistent style (like black, but faster)
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ────────────────────────────────────────────────────────
+  # Commitizen: Conventional Commits enforcement
+  #
+  # Validates that every commit message follows the format:
+  #   type(scope): description
+  #
+  # Valid types: feat, fix, docs, style, refactor, perf,
+  #              test, build, ci, chore, revert
+  #
+  # This hook runs on the COMMIT-MSG stage (after you write
+  # the message, before the commit is finalized).
+  # ────────────────────────────────────────────────────────
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.4.1
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # ────────────────────────────────────────────────────────
+  # Branch name enforcement (pre-push)
+  #
+  # Ensures branches follow the naming convention:
+  #   feature/*, fix/*, hotfix/*, docs/*, refactor/*,
+  #   chore/*, test/*, ci/*, release/*, bump/*
+  #
+  # Also allows: main, develop
+  #
+  # This runs at PUSH time, not commit time, so you can
+  # commit freely on a local branch but can't push if the
+  # name doesn't match.
+  #
+  # The script lives in scripts/check-branch-name.sh
+  # (kept as a separate file so YAML can't mangle it).
+  # ────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: branch-name-check
+        name: Branch name convention
+        entry: bash scripts/check-branch-name.sh
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false
