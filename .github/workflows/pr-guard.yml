@@ -44,7 +44,7 @@ jobs:
           # Search for conflict markers in all tracked files
           # grep returns exit code 0 if found (which means failure for us)
           if git diff --name-only origin/${{ github.base_ref }}...HEAD | \
-             xargs grep -rn '<<<<<<< \|=======$\|>>>>>>> ' -- 2>/dev/null; then
+             xargs grep -rn '<<<<<<<\|=======\|>>>>>>>' -- 2>/dev/null; then
             echo ""
             echo "FAILURE: Merge conflict markers found in the files above."
             echo "Please resolve all conflicts before merging."
