@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Supabase test configuration (local test values)
+  SUPABASE_URL: http://localhost:54321
+  SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test
+  SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:54322/test
+
+jobs:
+  # Fast feedback - lint + type-check in parallel
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+        working-directory: backend
+      - run: uv run ruff check src/ tests/ --output-format=github
+        working-directory: backend
+      - run: uv run ruff format --check src/ tests/
+        working-directory: backend
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+        working-directory: backend
+      - run: uv run mypy src/
+        working-directory: backend
+
+  # Tests need database
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [lint, type-check]
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+        working-directory: backend
+
+      # Run migrations if using Alembic
+      - run: uv run alembic upgrade head
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:54322/test
+
+      - run: uv run pytest -xvs --tb=short
+        working-directory: backend
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, type-check] # Don't wait for tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+        working-directory: backend
+      - run: uv build
+        working-directory: backend
