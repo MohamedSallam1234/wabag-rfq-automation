@@ -1,0 +1,12 @@
+# CD Workflow to be implemented in the future
+name: CD (To be implemented)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CD Workflow Placeholder
+        run: echo "CD Workflow to be implemented in the future"
