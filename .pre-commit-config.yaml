@@ -20,6 +20,28 @@ repos:
         pass_filenames: false
         always_run: true
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      # Run linter and apply auto-fixes
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi]
+      # Run formatter
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        args: [--config-file=backend/pyproject.toml]
+        files: ^backend/src/
+        additional_dependencies:
+          - "pydantic>=2.0"
+          - "sqlalchemy[mypy]>=2.0"
+          - "types-requests>=2.32"
+
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.0.0
     hooks:
@@ -29,6 +51,7 @@ repos:
           [
             feat,
             fix,
+            hotfix,
             docs,
             style,
             refactor,
