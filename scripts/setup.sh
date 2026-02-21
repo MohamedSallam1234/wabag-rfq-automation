@@ -7,6 +7,7 @@ echo "🚀 RFQ Auto Setup"
 if ! command -v uv &> /dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.cargo/bin:$PATH"
+    echo "export PATH=\"$HOME/.cargo/bin:$PATH\" And restart your terminal to apply changes">> ~/.bashrc
 fi
 
 # Backend
@@ -16,7 +17,7 @@ uv sync
 
 # Hooks
 cd ..
-pip install pre-commit -q
+uv tool install pre-commit
 pre-commit install --install-hooks
 
 echo "✅ Ready"
