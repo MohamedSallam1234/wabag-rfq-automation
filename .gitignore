@@ -5,8 +5,7 @@ __pycache__/
 dist/
 build/
 .venv/
-*.lock
-
+uv.lock
 # ── Node / Frontend ──────────────────────────────────────
 node_modules/
 .next/
