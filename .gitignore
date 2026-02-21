@@ -1,0 +1,37 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.lock
+
+# ── Node / Frontend ──────────────────────────────────────
+node_modules/
+.next/
+out/
+
+# ── Environment & secrets ────────────────────────────────
+.env
+
+
+# ── IDE ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+.cursor/
+
+
+# ── OS ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Coverage & test artifacts ────────────────────────────
+htmlcov/
+.coverage
+coverage.xml
+.pytest_cache/
+.ruff_cache/
