@@ -6,14 +6,15 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 jobs:
-  sonarqube:
-    name: SonarQube
-    runs-on: windows-latest
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest # Docker-based scanner — must be Linux
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
+          fetch-depth: 0 # Full history needed for blame/relevancy data
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master # SonarCloud, not SonarQube
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # PR decoration & status checks
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }} # Add this secret in GitHub repo settings
