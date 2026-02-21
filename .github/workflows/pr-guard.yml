@@ -1,0 +1,153 @@
+# ──────────────────────────────────────────────────────────
+# PR Guard - Server-side enforcement
+#
+# Pre-commit hooks protect locally, but developers can
+# bypass them with --no-verify. This workflow is the
+# server-side safety net that CANNOT be skipped.
+#
+# It enforces:
+#   1. No merge conflict markers in any file
+#   2. Branch naming convention (feature/*, fix/*, etc.)
+#   3. Conventional Commit format on PR title
+#      (GitHub uses PR title as the merge commit message
+#       when using squash merge)
+# ──────────────────────────────────────────────────────────
+
+name: PR Guard
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main, develop]
+
+jobs:
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  CHECK 1: No conflict markers                       ║
+  # ║                                                      ║
+  # ║  Scans ALL files in the PR for leftover merge       ║
+  # ║  conflict markers: <<<<<<<, =======, >>>>>>>.       ║
+  # ║  If found, the PR is blocked from merging.          ║
+  # ╚══════════════════════════════════════════════════════╝
+  conflict-check:
+    name: No conflict markers
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can diff against the base branch
+          fetch-depth: 0
+
+      - name: Check for merge conflict markers
+        run: |
+          echo "Scanning for conflict markers..."
+          # Search for conflict markers in all tracked files
+          # grep returns exit code 0 if found (which means failure for us)
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | \
+             xargs grep -rn '<<<<<<<\|=======\|>>>>>>>' -- 2>/dev/null; then
+            echo ""
+            echo "FAILURE: Merge conflict markers found in the files above."
+            echo "Please resolve all conflicts before merging."
+            exit 1
+          else
+            echo "No conflict markers found."
+          fi
+
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  CHECK 2: Branch naming convention                   ║
+  # ║                                                      ║
+  # ║  The source branch (head) must match one of:        ║
+  # ║    feature/*, fix/*, hotfix/*, docs/*, refactor/*,  ║
+  # ║    chore/*, test/*, ci/*, release/*, bump/*         ║
+  # ║                                                      ║
+  # ║  This enforces feature-based branching (also called ║
+  # ║  "GitHub Flow" or "trunk-based with short-lived     ║
+  # ║  feature branches").                                 ║
+  # ╚══════════════════════════════════════════════════════╝
+  branch-name:
+    name: Branch naming convention
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate branch name
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          PATTERN="^(main|develop|feature|fix|hotfix|docs|refactor|chore|test|ci|release|bump)/.+|^(main|develop)$"
+          echo "Branch: $BRANCH"
+
+          if [[ "$BRANCH" =~ $PATTERN ]]; then
+            echo "Branch name follows convention."
+          else
+            echo ""
+            echo "FAILURE: Branch '$BRANCH' does not follow the naming convention."
+            echo ""
+            echo "Allowed patterns:"
+            echo "  feature/<description>    - new functionality"
+            echo "  fix/<description>        - bug fixes"
+            echo "  hotfix/<description>     - urgent production fixes"
+            echo "  docs/<description>       - documentation changes"
+            echo "  refactor/<description>   - code restructuring"
+            echo "  chore/<description>      - maintenance tasks"
+            echo "  test/<description>       - test additions/changes"
+            echo "  ci/<description>         - CI/CD pipeline changes"
+            echo "  release/<description>    - release preparation"
+            echo "  bump/<description>       - version bumps"
+            echo ""
+            echo "Example: feature/document-upload-api"
+            exit 1
+          fi
+
+  # ╔══════════════════════════════════════════════════════╗
+  # ║  CHECK 3: PR title follows Conventional Commits     ║
+  # ║                                                      ║
+  # ║  When you use "Squash and merge" in GitHub, the PR  ║
+  # ║  title becomes the commit message. So if we enforce ║
+  # ║  the PR title format, the merge commit on main      ║
+  # ║  automatically follows Conventional Commits.        ║
+  # ║                                                      ║
+  # ║  Format: type(scope): description                    ║
+  # ║  Example: feat(api): add document upload endpoint   ║
+  # ╚══════════════════════════════════════════════════════╝
+  pr-title:
+    name: PR title (Conventional Commits)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate PR title
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          # Regex matches: type(optional-scope): description
+          # or:            type: description
+          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|cd|chore|revert)(\(.+\))?!?: .+"
+          echo "PR title: $TITLE"
+
+          if [[ "$TITLE" =~ $PATTERN ]]; then
+            echo "PR title follows Conventional Commits."
+          else
+            echo ""
+            echo "FAILURE: PR title does not follow Conventional Commits format."
+            echo ""
+            echo "Expected format:"
+            echo "  type(scope): description"
+            echo "  type: description"
+            echo ""
+            echo "Valid types:"
+            echo "  feat     - new feature"
+            echo "  fix      - bug fix"
+            echo "  docs     - documentation"
+            echo "  style    - formatting (no logic change)"
+            echo "  refactor - restructuring (no feature/fix)"
+            echo "  perf     - performance improvement"
+            echo "  test     - adding/updating tests"
+            echo "  build    - build system or dependencies"
+            echo "  ci       - CI changes"
+            echo "  cd       - CD changes"
+            echo "  chore    - maintenance"
+            echo "  revert   - revert a previous commit"
+            echo ""
+            echo "Examples:"
+            echo "  feat(api): add document upload endpoint"
+            echo "  fix: resolve race condition in extraction pipeline"
+            echo "  docs: update README with setup instructions"
+            exit 1
+          fi
