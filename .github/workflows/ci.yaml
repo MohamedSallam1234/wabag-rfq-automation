@@ -44,26 +44,11 @@ jobs:
       - run: uv run mypy src/
         working-directory: backend
 
-  # Tests need database
+  # Tests (no DB needed until database layer is implemented)
   test:
     name: Test
     runs-on: ubuntu-latest
     needs: [lint, type-check]
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test
-        ports:
-          - 54322:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -73,12 +58,7 @@ jobs:
       - run: uv sync --group dev
         working-directory: backend
 
-      # Run migrations if using Alembic
-      - run: uv run alembic upgrade head
-        working-directory: backend
-        env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:54322/test
-
+      # TODO: re-add postgres service + alembic upgrade head once DB layer is set up
       - run: uv run pytest -xvs --tb=short
         working-directory: backend
 

@@ -1,0 +1,55 @@
+# This workflow runs tests and code quality checks on every push and pull request on sonarCloud
+
+name: testing, code quality
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  # Minimal values so pytest can import settings without a real DB
+  SUPABASE_URL: http://localhost:54321
+  SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test
+  SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:54322/test
+
+jobs:
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest # Docker-based scanner — must be Linux
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history needed for blame/relevancy data
+
+      # ── Python & uv ────────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --group dev
+
+      # ── Tests + Coverage (generates backend/coverage.xml for Sonar) ────────
+      - name: Run tests with coverage
+        working-directory: backend
+        run: |
+          uv run pytest \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -x
+
+      # ── SonarCloud Analysis ────────────────────────────────────────────────
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # PR decoration & status checks
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
