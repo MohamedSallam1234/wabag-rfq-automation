@@ -93,6 +93,7 @@ jobs:
             echo "  cd/<description>         - CD pipeline changes"
             echo "  release/<description>    - release preparation"
             echo "  bump/<description>       - version bumps"
+            echo "  (main and develop are also valid target branches)"
             echo ""
             echo "Example: feature/document-upload-api"
             exit 1
@@ -119,7 +120,7 @@ jobs:
           TITLE="${{ github.event.pull_request.title }}"
           # Regex matches: type(optional-scope): description
           # or:            type: description
-          PATTERN="^(feat|fix|docs|style|refactor|perf|test|build|ci|cd|chore|revert)(\(.+\))?!?: .+"
+          PATTERN="^(feat|fix|hotfix|docs|style|refactor|perf|test|build|ci|cd|chore|revert)(\(.+\))?!?: .+"
           echo "PR title: $TITLE"
 
           if [[ "$TITLE" =~ $PATTERN ]]; then
