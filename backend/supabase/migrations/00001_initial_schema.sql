@@ -1,0 +1,2 @@
+-- Initial schema (will be populated when the full migration is implemented)
+-- This file is a placeholder; use Alembic for Python-side migrations.
