@@ -6,7 +6,7 @@ pattern="^(main|develop|feat|fix|hotfix|docs|refactor|chore|test|ci|cd|release|b
 
 if ! [[ "$branch" =~ $pattern ]]; then
   echo "❌ Invalid branch: $branch"
-  echo "Use: feat/x, fix/x, hotfix/x, docs/x, refactor/x, chore/x, test/x, ci/x, cd/x, release/x, bump/x, etc."
+  echo "Use: feature/x, fix/x, hotfix/x, docs/x, refactor/x, chore/x, test/x, ci/x, cd/x, release/x, bump/x, etc."
   exit 1
 fi
 
