@@ -24,6 +24,13 @@ repos:
         always_run: true
         stages: [pre-commit]
 
+      - id: test
+        name: test
+        entry: bash -c 'cd backend && uv run pytest src/ tests/'
+        language: system
+        always_run: true
+        stages: [pre-commit]
+
       - id: ruff-format
         name: ruff format
         entry: bash -c 'cd backend && uv run ruff format src/ tests/'
