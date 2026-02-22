@@ -22,6 +22,15 @@ repos:
         entry: bash scripts/check-branch-name.sh
         language: system
         always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: test
+        name: test
+        entry: bash -c 'cd backend && uv run pytest src/ tests/'
+        language: system
+        always_run: true
+        pass_filenames: false
         stages: [pre-commit]
 
       - id: ruff-format
@@ -29,6 +38,7 @@ repos:
         entry: bash -c 'cd backend && uv run ruff format src/ tests/'
         language: system
         always_run: true
+        pass_filenames: false
         stages: [pre-commit]
 
       - id: ruff-lint
@@ -36,6 +46,7 @@ repos:
         entry: bash -c 'cd backend && uv run ruff check src/ tests/'
         language: system
         always_run: true
+        pass_filenames: false
         stages: [pre-commit]
 
       - id: mypy
@@ -43,6 +54,7 @@ repos:
         entry: bash -c 'cd backend && uv run mypy src/'
         language: system
         always_run: true
+        pass_filenames: false
         stages: [pre-commit]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
