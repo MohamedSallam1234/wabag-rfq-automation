@@ -1,0 +1,296 @@
+# =============================================================================
+# WABAG RFQ Backend - Project Configuration
+# =============================================================================
+# This file defines the project metadata, dependencies, and tool configurations
+# for the WABAG RFQ Automation backend built with FastAPI.
+#
+# Quick Commands:
+#   uv sync              # Install dependencies
+#   uv sync --dev        # Install with dev dependencies
+#   uv run dev           # Start development server
+#   make lint            # Run code quality checks
+#   make test            # Run test suite
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# [PROJECT] - Package Metadata
+# -----------------------------------------------------------------------------
+# Core project information used by PyPI and package managers
+# -----------------------------------------------------------------------------
+[project]
+name = "wabag-rfq-backend"                    # Package name (PyPI identifier)
+version = "0.1.0"                             # Current version (managed by commitizen)
+description = "WABAG RFQ Automation – FastAPI backend"  # Short description
+requires-python = ">=3.12"                    # Minimum Python version (3.12+ for modern features)
+readme = "README_BACKEND.md"                  # Long description file
+
+# Authors - Add anyone who contributes significantly
+authors = [
+    {name = "Mohamed Sallam", email = "muhammad.ibrahim.sallam@gmail.com"},
+    {name = "Momen Yasser", email = "momenyasser522@gmail.com"},
+]
+
+# -----------------------------------------------------------------------------
+# [DEPENDENCIES] - Production Dependencies
+# -----------------------------------------------------------------------------
+# These are installed in all environments (dev, staging, production)
+# Grouped by functionality for easier maintenance
+# -----------------------------------------------------------------------------
+
+dependencies = [
+    # === FastAPI Stack ===
+    # Core web framework with CLI tools included via [standard] extra
+    # [standard] includes: uvicorn, fastapi-cli, python-multipart, email-validator
+    "fastapi[standard]>=0.115",
+    "python-multipart>=0.0.18",     # File upload handling for RFQ documents
+    "pydantic-settings>=2.7",       # Configuration management with env vars support
+
+    # === Database Layer ===
+    # Async PostgreSQL stack with Supabase integration
+    "supabase>=2.13",               # Supabase client (Auth, DB, Storage)
+    "sqlalchemy[asyncio]>=2.0",     # ORM with async support
+    "asyncpg>=0.30",                # Async PostgreSQL driver (fast, native async)
+    "alembic>=1.14",                # Database migrations
+
+    # === Document Processing ===
+    # Libraries for handling RFQ documents in various formats
+    "pypdf>=5.4",                   # PDF text extraction and manipulation
+    "python-docx>=1.1",             # Microsoft Word document processing
+    "openpyxl>=3.1",                # Excel spreadsheet reading/writing
+    "pillow>=11.1",                 # Image processing (for scanned documents)
+
+    # === External Services ===
+    "httpx>=0.28",                  # Modern async HTTP client for LLM APIs
+
+    # === Report Generation ===
+    # Tools for generating RFQ output documents
+    "reportlab>=4.2",               # PDF generation from templates
+    "jinja2>=3.1",                  # Template engine for document generation
+]
+
+# -----------------------------------------------------------------------------
+# [DEPENDENCY-GROUPS] - Development Dependencies
+# -----------------------------------------------------------------------------
+# UV-specific feature (replaces [project.optional-dependencies])
+# Install with: uv sync (includes dev by default in UV 0.4.0+)
+# or: uv sync --group dev
+# -----------------------------------------------------------------------------
+[dependency-groups]
+dev = [
+    # === Testing ===
+    "pytest>=8.3",                  # Main testing framework
+    "pytest-asyncio>=0.25",         # Async test support (for FastAPI endpoints)
+    "pytest-cov>=6.1",              # Coverage reporting
+
+    # === Code Quality ===
+    "ruff>=0.9",                    # Fast linter and formatter (replaces flake8, black, isort)
+    "mypy>=1.14",                   # Static type checker
+    "pre-commit>=4.1",              # Git hooks for pre-commit checks
+    "commitizen>=4.4",              # Conventional commits and versioning
+
+    # === Type Stubs ===
+    # Required by mypy to check untyped third-party libraries
+    "types-requests>=2.32",         # Stubs for requests library
+    "sqlalchemy[mypy]>=2.0",        # Stubs for SQLAlchemy
+]
+
+# -----------------------------------------------------------------------------
+# [BUILD-SYSTEM] - Package Building
+# -----------------------------------------------------------------------------
+# Defines how the package is built and distributed
+# Hatchling is modern, fast, and PEP 517 compliant
+# -----------------------------------------------------------------------------
+[build-system]
+requires = ["hatchling"]            # Build backend requirements
+build-backend = "hatchling.build"   # Use hatchling to build wheels/sdists
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app"]              # Map src/app to package 'app' (src layout)
+
+# =============================================================================
+# TOOL CONFIGURATIONS
+# =============================================================================
+# Settings for development tools (ruff, mypy, pytest, etc.)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# [RUFF] - Linter & Formatter Configuration
+# -----------------------------------------------------------------------------
+# Ruff replaces: flake8, black, isort, pydocstyle, pyupgrade, and more
+# Docs: https://docs.astral.sh/ruff/configuration/
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100                   # Max line length (PEP 8 recommends 79, 100 is modern standard)
+target-version = "py312"            # Target Python 3.12+ syntax
+src = ["src", "tests"]              # Source directories for first-party code detection
+exclude = [                         # Files/directories to ignore
+    ".git",
+    ".venv",
+    "__pycache__",
+    "alembic/versions",             # Auto-generated migration files
+    ".pytest_cache",
+    ".mypy_cache",
+]
+show-fixes = true                   # Show which issues were auto-fixed
+
+# --- Lint Rules ---
+# Enable comprehensive rule sets for strict code quality
+# See all rules: https://docs.astral.sh/ruff/rules/
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle (PEP 8 errors and warnings)
+    "F",         # Pyflakes (undefined names, unused imports)
+    "I",         # isort (import sorting)
+    "N",         # pep8-naming (naming conventions)
+    "UP",        # pyupgrade (modern Python syntax)
+    "B",         # flake8-bugbear (common bugs/design issues)
+    "SIM",       # flake8-simplify (code simplification)
+    "RUF",       # Ruff-specific rules
+    "D",         # pydocstyle (docstring conventions)
+    "ANN",       # flake8-annotations (type annotations required)
+    "S",         # flake8-bandit (security issues)
+    "C4",        # flake8-comprehensions (better comprehensions)
+    "PT",        # flake8-pytest-style (pytest best practices)
+    "RET",       # flake8-return (consistent return statements)
+    "ARG",       # flake8-unused-arguments
+    "PL",        # Pylint rules
+]
+ignore = [
+    "D100",      # Ignore: Missing docstring in public module (too noisy early on)
+    "D104",      # Ignore: Missing docstring in public package (__init__.py)
+    "D203",      # Ignore: Conflicts with D211 (blank line before class)
+    "D213",      # Ignore: Conflicts with D212 (multi-line summary style)
+    "ANN401",    # Ignore: Allow typing.Any when necessary (e.g., dynamic data)
+    "S101",      # Ignore: Allow assert in production code (we use for type narrowing)
+]
+
+# Per-file ignores - relax rules where appropriate
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "D",         # Don't require docstrings in tests
+    "ANN",       # Don't require type annotations in tests
+    "S101",      # Allow assert in tests
+    "ARG",       # Unused fixtures are normal in pytest
+    "PLR2004",   # Magic values are fine in tests (assert x == 42)
+]
+"alembic/**/*.py" = [
+    "D",         # No docstrings needed in migrations
+    "ANN",       # No type annotations needed
+    "INP001",    # Alembic files don't need __init__.py
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"               # Use Google-style docstrings
+
+# --- Formatter Settings ---
+[tool.ruff.format]
+quote-style = "double"              # Use double quotes for strings
+indent-style = "space"              # Use spaces (4) for indentation
+skip-magic-trailing-comma = false   # Respect trailing commas (multi-line formatting)
+line-ending = "auto"                # Use platform-appropriate line endings
+docstring-code-format = true        # Format code examples in docstrings
+docstring-code-line-length = 100    # Line length for docstring code
+
+# -----------------------------------------------------------------------------
+# [MYPY] - Static Type Checker Configuration
+# -----------------------------------------------------------------------------
+# Strict mode enabled - catches type errors before runtime
+# Docs: https://mypy.readthedocs.io/en/stable/config_file.html
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"             # Target Python version
+strict = true                       # Enable all strict checks
+warn_return_any = true              # Warn if return type is Any
+warn_unused_configs = true          # Warn about unused mypy config
+disallow_untyped_defs = true        # Require types on all function definitions
+disallow_incomplete_defs = true     # Require types on all parameters/returns
+check_untyped_defs = true           # Type-check bodies of untyped functions
+no_implicit_optional = true         # Require Optional[X] instead of X = None
+warn_redundant_casts = true         # Warn about unnecessary type casts
+warn_unused_ignores = true          # Warn about unused # type: ignore comments
+show_error_codes = true             # Show error codes (for ignore targeting)
+warn_unreachable = true             # Warn about unreachable code (dead code)
+enable_error_code = [               # Enable specific error codes
+    "ignore-without-code",          # Require error codes in type: ignore
+    "redundant-expr",               # Warn about redundant expressions
+    "truthy-bool",                  # Warn about non-bool values in bool context
+]
+plugins = [                         # Third-party plugins
+    "pydantic.mypy",                # Pydantic model support
+    "sqlalchemy.ext.mypy.plugin",   # SQLAlchemy ORM support
+]
+
+# Ignore missing imports for libraries without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "supabase.*",
+    "realtime.*",
+    "postgrest.*",
+    "storage3.*",
+    "gotrue.*",
+]
+ignore_missing_imports = true
+
+# -----------------------------------------------------------------------------
+# [PYTEST] - Test Runner Configuration
+# -----------------------------------------------------------------------------
+# pytest with async support and coverage reporting
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"               # Automatically handle async tests
+testpaths = ["tests"]               # Directory containing tests
+addopts = [                         # Default command-line options
+    "--cov=src/app",                # Measure coverage via source path (src layout)
+    "--cov-report=term-missing",    # Show missing lines in terminal
+    "--cov-report=xml:coverage.xml", # XML report consumed by SonarCloud
+    "--cov-fail-under=80",          # Require 80% minimum coverage
+]
+filterwarnings = [                  # Suppress noisy warnings
+    "ignore::DeprecationWarning",
+]
+markers = [                         # Custom test markers
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+# -----------------------------------------------------------------------------
+# [COVERAGE] - Test Coverage Configuration
+# -----------------------------------------------------------------------------
+# Measures which code is executed during tests
+# -----------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src/app"]                # Measure coverage for this source path
+omit = [
+    "*/.venv/*",                    # Virtual environment
+    "*/tests/*",                    # Test files themselves
+    "*/test_*",
+    "*/migrations/*",               # Migration files
+]
+
+[tool.coverage.report]
+exclude_lines = [                   # Lines to exclude from coverage report
+    "pragma: no cover",             # Manual exclusion comment
+    "if TYPE_CHECKING:",            # Type-only imports block
+    "raise NotImplementedError",    # Abstract methods
+    "@abstractmethod",              # Decorator for abstract methods
+]
+show_missing = true                 # Show line numbers of missing coverage
+skip_empty = true                   # Skip empty files in report
+
+# -----------------------------------------------------------------------------
+# [COMMITIZEN] - Conventional Commits & Versioning
+# -----------------------------------------------------------------------------
+# Enforces commit message format and handles versioning
+# Usage: cz commit (instead of git commit)
+# -----------------------------------------------------------------------------
+[tool.commitizen]
+name = "cz_conventional_commits"    # Use conventional commits format
+version = "0.1.0"                   # Current version (bumped via cz bump)
+tag_format = "v$version"            # Git tag format (e.g., v0.1.0)
+version_files = [                   # Files containing version strings to update
+    "pyproject.toml:^version",      # Update version in this file
+]
+allowed_prefixes = [                # Allowed commit message prefixes
+    "Merge",
+    "Revert",
+    "Initial",
+]

@@ -1,0 +1,2 @@
+-- Seed data for local development
+-- (populated when specific tables are implemented)
