@@ -1,0 +1,1 @@
+"""CRUD endpoints for projects."""
