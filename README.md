@@ -1,12 +1,12 @@
 # SOFTWARE REQUIREMENTS SPECIFICATION
 
-## RFQ Automation System for VA Tech Wabag
+## RFQ Automation System
 
 ### Water & Wastewater Treatment Plant Engineering
 
-**Document Version:** 2.0
-**Date:** February 2026
-**Prepared for:** Momen Yasser by mohamed Sallam
+**Document Version:** 3.0
+**Date:** April 2026
+**Prepared for:** Mohamed Sallam by Momen Yasser
 **Document Type:** Software Requirements Specification (SRS)
 **Classification:** Internal Use
 
@@ -20,7 +20,8 @@
 4. External Interface Requirements
 5. Non-Functional Requirements
 6. Data Requirements
-7. Appendices
+7. Future Phases
+8. Appendices
 
 ---
 
@@ -28,13 +29,9 @@
 
 ### 1.1 Purpose
 
-This SRS document defines the complete requirements for the RFQ Automation System designed for VA Tech Wabag's water and wastewater treatment plant engineering division. The system automates the transformation of multi-source engineering documents into structured Request for Quotation (RFQ) packages using multimodal Large Language Models (LLMs).
+This SRS document defines the complete requirements for the RFQ Automation System designed for water and wastewater treatment plant engineering. The system automates the transformation of multi-source engineering documents into structured Request for Quotation (RFQ) packages using multimodal Large Language Models (LLMs), governed by a set of engineered prompts that dictate the accuracy and flow of the generation process.
 
 ### 1.2 Document Conventions
-
-Table
-
-Copy
 
 | Term      | Definition                                                        |
 | :-------- | :---------------------------------------------------------------- |
@@ -42,40 +39,45 @@ Copy
 | **P&ID**  | Piping and Instrumentation Diagram                                |
 | **BOQ**   | Bill of Quantities                                                |
 | **EPC**   | Engineering, Procurement, Construction                            |
-| **RAS**   | Return Activated Sludge                                           |
-| **TC-CS** | Technical Clearance - Coarse Screens                              |
 | **MLLM**  | Multimodal Large Language Model                                   |
 | **HITL**  | Human-in-the-Loop                                                 |
+| **RAS**   | Return Activated Sludge                                           |
+| **TC-CS** | Technical Clearance - Coarse Screens                              |
 
 ### 1.3 Intended Audience
 
 - Software Architects and Developers
-- VA Tech Wabag Engineering Managers
+- Engineering Managers
 - Project Managers and Procurement Teams
-- Quality Assurance and Compliance Officers
+- Quality Assurance Officers
 
 ### 1.4 Project Scope
 
-**In Scope:**
+**Phase 1 (This Document) — In Scope:**
 
-- Automated extraction from 6 document types (01-06 series)
-- Generation of 3 RFQ template types (RAS Pump, TC-CS, Variance Analysis)
+- Automated extraction from 5 source document types
+- Generation of a single standardized RFQ template (Equipment Datasheet)
 - Human review workflow with confidence-based routing
-- Integration with Wabag ERP (SAP) and vendor portals
+- Project-scoped archive and access control
 
-**Out of Scope:**
+**Phase 2 (Future — See Section 7):**
 
+- Compliance Matrix generation: AI-assisted comparison of vendor offers against the issued RFQ
+
+**Out of Scope (All Phases):**
+
+- SAP ERP integration
+- Vendor portal integration
 - Tender/bidding phase (pre-award)
 - Vendor selection algorithms
 - Post-PO manufacturing tracking
-- Real-time collaboration features (Phase 3)
 
 ### 1.5 References
 
-1. IEEE Std 830-1998 - IEEE Recommended Practice for Software Requirements Specifications
-2. ISO/IEC/IEEE 29148:2018 - Systems and software engineering - Life cycle processes - Requirements engineering
-3. VA Tech Wabag Internal Document Standards (Project Execution Process Flow v2.1)
-4. Real-world document analysis: RFQ Templates.xlsx (03_RFQ_Templates.xlsx)
+1. IEEE Std 830-1998 — Recommended Practice for Software Requirements Specifications
+2. ISO/IEC/IEEE 29148:2018 — Systems and software engineering requirements engineering
+3. Internal Document Standards (Project Execution Process Flow v2.1)
+4. In-house RFQ AI-Enhanced System Overview (internal briefing document)
 
 ---
 
@@ -83,66 +85,58 @@ Copy
 
 ### 2.1 Product Perspective
 
-The RFQ Automation System is a new standalone web application that integrates with existing Wabag systems (SAP ERP, Document Management, SSO). It operates in the post-tender phase of EPC projects, bridging the gap between engineering design completion and procurement initiation.
+The RFQ Automation System is a standalone web application that supports the post-tender phase of EPC projects, bridging the gap between engineering design completion and procurement initiation. It replicates and accelerates the work of a senior technical engineer who would typically spend 2–3 days preparing a single RFQ manually.
+
+The system accepts a set of project documents, runs AI-driven extraction and cross-correlation across them, and produces a fully populated RFQ datasheet ready for engineer review and distribution to vendors.
 
 **System Context Diagram:**
 
-plain
-
-Copy
-
-```plain
-┌─────────────────────────────────────────────────────────────────┐
-│                    EXTERNAL SYSTEMS                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │  Client  │  │  SAP ERP │  │  Vendor  │  │  Azure   │        │
-│  │  Docs    │  │  System  │  │  Portals │  │   AD     │        │
-│  │ (PDF)    │  │          │  │          │  │  (SSO)   │        │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
-│       │             │             │             │               │
-│       │             │             │             │               │
-│       ▼             ▼             ▼             ▼               │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              RFQ AUTOMATION SYSTEM                        │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │   │
-│  │  │ Document │  │   AI     │  │  Review  │  │  Output  │  │   │
-│  │  │ Ingestion│  │Extraction│  │ Workbench│  │ Generator│  │   │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                           ▲                                     │
-│                           │                                     │
-│                    ┌──────┴──────┐                              │
-│                    │   Wabag     │                              │
-│                    │  Engineers  │                              │
-│                    │  (Users)    │                              │
-│                    └─────────────┘                              │
-└─────────────────────────────────────────────────────────────────┘
+```
+┌──────────────────────────────────────────────────────────┐
+│                   INPUT DOCUMENTS                         │
+│  Employer Specs │ Process Eng. │ Hydraulic │ Equip. List │
+│                     RFQ Template                         │
+└─────────────────────────┬────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────┐
+│                 RFQ AUTOMATION SYSTEM                     │
+│  ┌────────────┐  ┌──────────────┐  ┌───────────────────┐ │
+│  │  Document  │  │  AI          │  │  Review           │ │
+│  │  Ingestion │  │  Extraction  │  │  Workbench        │ │
+│  └────────────┘  └──────────────┘  └───────────────────┘ │
+│  ┌────────────┐  ┌──────────────┐                        │
+│  │  Prompt    │  │  Archive     │                        │
+│  │  Engine    │  │  System      │                        │
+│  └────────────┘  └──────────────┘                        │
+└─────────────────────────┬────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────┐
+│               RFQ OUTPUT (Excel / PDF)                    │
+│         Reviewed & Approved by Technical Engineer         │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 Product Functions
 
 **Major Functions:**
 
-1. **F-01: Multi-Document Ingestion** - Accept batch uploads of 6 document types
-2. **F-02: Intelligent Document Classification** - Auto-detect document type and revision
-3. **F-03: Cross-Document Extraction** - Extract equipment data with source tracking
-4. **F-04: Validation & Verification** - Multi-layer validation with discrepancy detection
-5. **F-05: Human Review Workflow** - Confidence-based routing with side-by-side editing
-6. **F-06: RFQ Generation** - Template population with client-specific formatting
-7. **F-07: Variance Analysis** - Compare proposal vs. detailed engineering stages
-8. **F-08: System Integration** - Export to SAP and vendor portals
+1. **F-01: Multi-Document Ingestion** — Accept batch uploads of source document types
+2. **F-02: Intelligent Document Classification** — Auto-detect document type and revision
+3. **F-03: Cross-Document Extraction** — Extract equipment data with cross-referencing and conflict detection
+4. **F-04: Validation & Verification** — Multi-layer validation with discrepancy detection
+5. **F-05: Human Review Workflow** — Confidence-based routing with side-by-side editing and adaptive prompt-based revision
+6. **F-06: RFQ Generation** — Single standardized template population with full data traceability
+7. **F-07: Project Archive** — Scoped storage with access control per project
 
 ### 2.3 User Classes and Characteristics
-
-Table
-
-Copy
 
 | User Class                      | Role                                          | Technical Skill      | Usage Frequency | Key Needs                                      |
 | :------------------------------ | :-------------------------------------------- | :------------------- | :-------------- | :--------------------------------------------- |
 | **UC-01: Project Engineer**     | Creates RFQs, reviews extractions             | High (domain expert) | Daily           | Accuracy, speed, source traceability           |
-| **UC-02: Senior Engineer**      | Approves complex RFQs, resolves discrepancies | Very High            | Weekly          | Oversight, exception handling, compliance      |
-| **UC-03: Project Manager**      | Monitors progress, manages timelines          | Medium               | Weekly          | Dashboards, status tracking, resource planning |
+| **UC-02: Senior Engineer**      | Approves complex RFQs, resolves discrepancies | Very High            | Weekly          | Oversight, exception handling                  |
+| **UC-03: Project Manager**      | Monitors progress, manages timelines          | Medium               | Weekly          | Dashboards, status tracking                    |
 | **UC-04: Procurement Officer**  | Receives RFQs, distributes to vendors         | Medium               | Daily           | Format compliance, completeness checks         |
 | **UC-05: System Administrator** | Manages templates, users, audit logs          | High                 | Monthly         | Governance, security, performance              |
 
@@ -150,28 +144,26 @@ Copy
 
 **Server Environment:**
 
-- Cloud: AWS/Azure/GCP or On-premise Kubernetes
+- Cloud (AWS/Azure/GCP) or On-premise Kubernetes
 - OS: Linux (Ubuntu 22.04 LTS)
 - Container Orchestration: Kubernetes 1.28+
-- Database: PostgreSQL 16, Neo4j 5, Redis 7
+- Database: PostgreSQL 16, Redis 7
 
 **Client Environment:**
 
 - Modern web browsers (Chrome 120+, Firefox 121+, Edge 120+)
-- Minimum resolution: 1920x1080 (optimized for dual-monitor setups)
+- Minimum resolution: 1920×1080 (optimized for dual-monitor setups)
 - PDF viewer integration for source document display
 
 ### 2.5 Design and Implementation Constraints
 
-**C-01: Data Residency:** Middle East projects require data storage within regional boundaries (UAE, Saudi Arabia)
+**C-01: Data Residency:** Projects may require data storage within regional boundaries (UAE, Saudi Arabia, Egypt)
 
 **C-02: LLM Provider:** Primary: Claude Opus 4.6 (1M token context). Fallback: Kimi 2.5 (2M token context) for cost optimization
 
-**C-03: Integration:** Must support SAP RFC connections and legacy vendor email-based RFQ distribution
+**C-03: Compliance:** All actions must generate immutable audit logs per ISO 9001:2015 requirements
 
-**C-04: Compliance:** All actions must generate immutable audit logs per ISO 9001:2015 requirements
-
-**C-05: Accessibility:** System must function with intermittent connectivity (offline review mode)
+**C-04: Accessibility:** System must support intermittent connectivity (offline review mode for field use)
 
 ---
 
@@ -181,27 +173,27 @@ Copy
 
 #### 3.1.1 Description
 
-Enable batch upload of all project source documents with automatic format detection and validation.
+Enable batch upload of all project source documents with automatic format detection and validation. The system must handle the five core document types that together constitute the prerequisites for generating an accurate RFQ.
 
 #### 3.1.2 Functional Requirements
 
-**F-01-01:** System shall accept simultaneous upload of up to 20 files (total size ≤ 500MB)
+**F-01-01:** System shall accept simultaneous upload of up to 20 files (total size ≤ 500 MB)
 
-**F-01-02:** System shall support formats: PDF, DOCX, XLSX, XLS, DWG (with converter), PNG, JPG
+**F-01-02:** System shall support the following formats: PDF, DOCX, XLSX, XLS, DWG (with converter), PNG, JPG
 
-**F-01-03:** System shall auto-classify documents using filename patterns and content analysis:
+**F-01-03:** System shall auto-classify uploaded documents into the following types using filename patterns and content analysis:
 
-- Pattern matching: `01_*` → Employer Technical Specifications
-- Pattern matching: `02_*` → Process Engineering Profile
-- Pattern matching: `03_*` → Process Simulation Reports OR RFQ Templates (disambiguate by content)
-- Pattern matching: `04_*` → Hydraulic Calculation Profile
-- Pattern matching: `06_*` → Equipment List
+- Employer Technical Specifications (Standard Codes)
+- Process Engineering Profile (Design Data)
+- Hydraulic Profile (including CAD-generated PDFs)
+- Equipment List
+- RFQ Template
 
 **F-01-04:** System shall detect document revision from headers/footers (Rev A, Rev B, Rev C, Rev 1, Rev 2)
 
 **F-01-05:** System shall validate file integrity (checksum) and reject corrupted files with specific error messages
 
-**F-01-06:** System shall extract metadata: page count, author, creation date, last modified date
+**F-01-06:** System shall extract document metadata: page count, author, creation date, last modified date
 
 #### 3.1.3 Use Case: Upload Project Documents
 
@@ -212,18 +204,18 @@ Enable batch upload of all project source documents with automatic format detect
 **Main Flow:**
 
 1. Engineer navigates to project workspace
-2. Clicks "Upload Documents" button
+2. Clicks "Upload Documents"
 3. System displays dropzone with document type indicators
-4. Engineer drags 6 files (01-06 series) into dropzone
-5. System validates files and displays classification preview
+4. Engineer uploads the five source document types
+5. System validates files and displays a classification preview
 6. Engineer confirms or corrects document type assignments
-7. System initiates processing pipeline
-8. Engineer receives notification when extraction complete
+7. System initiates the processing pipeline
+8. Engineer receives notification when extraction is complete
 
 **Alternative Flows:**
 
-- 5a. File corrupted: System highlights specific file, requests re-upload
-- 5b. Revision conflict detected: System warns "Rev C detected but project has Rev B - continue?"
+- 5a. File corrupted: System highlights the specific file and requests re-upload
+- 5b. Revision conflict detected: System warns "Rev C detected but project has Rev B — continue?"
 - 6a. Engineer reassigns document type: System reprocesses classification
 
 ---
@@ -232,16 +224,16 @@ Enable batch upload of all project source documents with automatic format detect
 
 #### 3.2.1 Description
 
-Automatically identify document structure, extract layout elements, and prepare for MLLM processing.
+Automatically identify document structure, extract layout elements, and prepare content for MLLM processing. The system must handle a variety of file types including native PDFs, scanned drawings, spreadsheets, and CAD-generated outputs.
 
 #### 3.2.2 Functional Requirements
 
-**F-02-01:** System shall detect document structure:
+**F-02-01:** System shall detect document structure per type:
 
 - Text-based PDF: Extract native text with bounding boxes
 - Scanned/image PDF: Apply OCR (PaddleOCR for multi-language support)
 - DOCX: Extract structured XML with heading hierarchy
-- XLSX/XLS: Identify sheet types (data vs. charts vs. calculations)
+- XLSX/XLS: Identify sheet types (data tables, charts, calculations)
 
 **F-02-02:** System shall identify and extract tables with preservation of merged cells and formulas
 
@@ -249,9 +241,9 @@ Automatically identify document structure, extract layout elements, and prepare 
 
 **F-02-04:** System shall identify equipment tags using regex patterns: `[A-Z]{1,2}-\d{2,4}[A-Z]?` (e.g., P-101, TK-201, B-100A)
 
-**F-02-05:** System shall create document map: index of all pages with content type classification
+**F-02-05:** System shall create a document map: an index of all pages with content type classification
 
-**F-02-06:** System shall handle Arabic and Chinese text in vendor documentation
+**F-02-06:** System shall handle Arabic and other RTL text present in source documentation
 
 ---
 
@@ -259,7 +251,7 @@ Automatically identify document structure, extract layout elements, and prepare 
 
 #### 3.3.1 Description
 
-Extract equipment specifications across all source documents with cross-referencing and conflict detection.
+Extract equipment specifications across all source documents with cross-referencing and conflict detection. This mirrors the work a senior technical engineer performs when correlating data across engineering documents — a process that currently takes 2–3 days per RFQ.
 
 #### 3.3.2 Functional Requirements
 
@@ -267,168 +259,35 @@ Extract equipment specifications across all source documents with cross-referenc
 
 - Tag number (primary identifier)
 - Equipment category (pump, blower, valve, tank, instrument, screen, conveyor)
-- Description (narrative)
+- Description
 - Process parameters (capacity, head, temperature, pressure)
 - Material specifications (impeller, casing, shaft, seal)
 - Performance data (efficiency, power, speed)
 - Testing requirements (FAT, NDT, certifications)
-- Scope of supply (what vendor provides)
+- Scope of supply (vendor deliverables)
 
-**F-03-02:** System shall perform cross-document validation per Reference Matrix:
+**F-03-02:** System shall perform cross-document validation per the following reference matrix:
 
-Table
-
-Copy
-
-| RFQ Field             | Primary Source           | Secondary Source             | Validation Rule               |
-| :-------------------- | :----------------------- | :--------------------------- | :---------------------------- |
-| Capacity (m³/hr)      | 04_Hydraulic_Calculation | 03_Process_Simulation        | Values must be within ±10%    |
-| Differential Head (m) | 04_Hydraulic_Calculation | 02_Process_Engineering       | Values must be within ±5%     |
-| Material Grade        | 01_Employer_Specs        | Wabag Material Master        | Must exist in approved list   |
-| Motor Power (kW)      | 04_Hydraulic_Calculation | Egyptian Code service factor | Must apply 25%/20%/15% factor |
-| Quantity              | 06_Equipment_List        | P&ID tag count               | Must match                    |
-| Testing Requirements  | 01_Employer_Specs        | Client-specific standards    | Must include mandatory tests  |
+| RFQ Field             | Primary Source           | Secondary Source        | Validation Rule                    |
+| :-------------------- | :----------------------- | :---------------------- | :--------------------------------- |
+| Capacity (m³/hr)      | Hydraulic Profile        | Process Engineering     | Values must be within ±10%         |
+| Differential Head (m) | Hydraulic Profile        | Process Engineering     | Values must be within ±5%          |
+| Material Grade        | Employer Specifications  | Internal material list  | Must exist in approved list        |
+| Motor Power (kW)      | Hydraulic Profile        | Egyptian Code SF        | Apply 25%/20%/15% service factor   |
+| Quantity              | Equipment List           | P&ID tag count          | Must match                         |
+| Testing Requirements  | Employer Specifications  | Client-specific clauses | Must include all mandatory tests   |
 
 **F-03-03:** System shall detect and flag discrepancies between sources with severity levels:
 
-- **Critical:** Values differ by >20% (blocks RFQ generation)
-- **Warning:** Values differ by 10-20% (requires engineer review)
-- **Info:** Values differ by <10% (auto-resolve using primary source)
+- **Critical:** Values differ by >20% (blocks RFQ generation pending engineer review)
+- **Warning:** Values differ by 10–20% (requires engineer review)
+- **Info:** Values differ by <10% (auto-resolved using primary source)
 
 **F-03-04:** System shall resolve "same as" references (e.g., "P-102 same as P-101") by copying validated specifications
 
-**F-03-05:** System shall extract and normalize units (convert m³/hr to L/s if needed, standardize on metric)
+**F-03-05:** System shall extract and normalize units (convert to metric, standardize notation)
 
-**F-03-06:** System shall identify client-specific requirements from 01_Employer_Specs and apply to all relevant equipment
-
-#### 3.3.3 Real-World Data Structure Analysis
-
-Based on analysis of 03_RFQ_Templates.xlsx, the system must handle:
-
-**RAS Pump Datasheet Structure:**
-
-plain
-
-Copy
-
-```plain
-Section: Header
-├── Project (text)
-├── Location (text)
-├── Client (text)
-├── Consultant (text)
-├── WABAG Doc. No. (text)
-└── Client Doc. No. (text)
-
-Section: Process Data
-├── Fluid Handled (text)
-├── Quantity (integer, Nos.)
-├── Capacity (numeric, m³/hr)
-├── Ambient Temperature (numeric, °C)
-├── Solid Handling Size (numeric, mm)
-├── Suction Pressure (numeric, bar)
-├── Differential Head (numeric, mwc)
-├── Head Range (min/max, mwc)
-└── Service Duty (text)
-
-Section: Performance Data
-├── Type (text)
-├── Impeller Type (text)
-├── Design Standard (text: ISO 9906, API 610, etc.)
-├── Full Load Speed (integer, rpm)
-├── No. of Stages (integer)
-├── Pump Efficiency (numeric, %)
-├── Power Required at Duty Point (numeric, kW)
-└── Shut-Off Head (numeric, m)
-
-Section: Material of Construction
-├── Impeller (material code)
-├── Casing (material code)
-├── Shaft (material code)
-├── Type of Seal (text)
-├── Fasteners (material code)
-├── Foundation Bolts (material code)
-├── Bearing (text)
-├── Guide Rail (material code)
-└── Lifting Chain (material code)
-
-Section: Drive Motor
-├── Type (text)
-├── Rating (numeric, kW)
-├── Speed (integer, rpm)
-├── Starting Method (text: DOL, Star-Delta, VFD)
-├── Motor Efficiency Class (text: IE2, IE3, IE4)
-├── Power Supply (text: V/Ph/Hz, e.g., "400/3/50")
-├── Ingress Protection (text: IP55, IP65)
-├── Insulation (text: Class F, Class H)
-├── Mounting/Frame Size (text)
-├── Moisture and Thermal Sensors (boolean)
-├── Thermal Protection 3*PTC (boolean)
-├── Thermal Protection for Bearing PT100 (boolean)
-├── Vibration Sensor (boolean)
-├── Cooling Method (text)
-└── Submerged gearboxes moisture sensor (boolean)
-
-Section: Vendor Scope (checklist)
-├── Pump (boolean)
-├── Motor (boolean)
-├── Cables 20m (boolean)
-├── Guide Rails (boolean)
-├── Pedestal Coupling (boolean)
-├── Guide Bar and Bracket (boolean)
-├── Lifting Chain with Shackles (boolean)
-└── Spare Parts (array of strings)
-```
-
-**TC-CS (Technical Clearance - Screens/Screw Conveyor) Structure:**
-
-plain
-
-Copy
-
-```plain
-├── SBU (text)
-├── Project Name (text)
-├── Client (text)
-├── Consultant (text)
-├── Project No (text)
-├── Location (text)
-├── Discipline (text)
-├── Clearance Date (date)
-├── MR No/Rev. No (text)
-├── MR Date (date)
-├── Project Manager (text)
-├── Product Description (text)
-├── Specifications & Datasheets (array)
-├── Approved Vendors (array)
-├── Received Offers (array of {vendor_name, offer_reference})
-├── Enclosures (array)
-└── Comments/Remarks (text) with signature blocks
-```
-
-**Variance Analysis Structure:**
-
-plain
-
-Copy
-
-```plain
-├── Project (text)
-├── Project No (text)
-├── Equipment (text)
-├── Comparison Table:
-│   ├── S.No (integer)
-│   ├── Equipment Details:
-│   │   ├── Name (text)
-│   │   └── Tag No (text)
-│   ├── Proposal Stage:
-│   │   ├── Qty (Nos.) (integer)
-│   │   └── Specification (text)
-│   └── Detailed Engineering:
-│       ├── Qty (Nos.) (integer)
-│       └── Specification (text)
-└── Remarks (text)
-```
+**F-03-06:** System shall identify and apply client-specific requirements from Employer Specifications to all relevant equipment
 
 ---
 
@@ -436,7 +295,7 @@ Copy
 
 #### 3.4.1 Description
 
-Multi-layer validation system ensuring extracted data meets engineering standards and business rules.
+Multi-layer validation system ensuring extracted data meets engineering standards and business rules before proceeding to RFQ generation.
 
 #### 3.4.2 Functional Requirements
 
@@ -448,41 +307,27 @@ Multi-layer validation system ensuring extracted data meets engineering standard
 
 **F-04-02:** System shall perform Cross-Reference Validation (L2):
 
-- Query Knowledge Graph for equipment relationships
 - Verify P&ID tags exist in Equipment List
 - Check hydraulic calculations reference valid equipment tags
 
-**F-04-03:** System shall perform Material Master Validation (L3):
-
-- Query Wabag Material Master database
-- Validate material codes (SS316L, SS304, Duplex 2205, etc.)
-- Suggest alternatives if material unavailable
-
-**F-04-04:** System shall perform Standards Validation (L4):
+**F-04-03:** System shall perform Standards Validation (L3):
 
 - Verify ISO, ASTM, API, DIN standard numbers are current
-- Flag deprecated standards (e.g., old ISO 9906 versions)
-- Suggest current equivalent standards
+- Flag deprecated standards and suggest current equivalents
 
-**F-04-05:** System shall perform Engineering Logic Validation (L5):
+**F-04-04:** System shall perform Engineering Logic Validation (L4):
 
-- NPSH_available > NPSH_required + 0.5m safety margin
-- Pump efficiency within 40-85% range (flag if outside)
-- Motor power matches calculated hydraulic power + service factor
+- NPSH_available > NPSH_required + 0.5 m safety margin
+- Pump efficiency within 40–85% range
+- Motor power matches calculated hydraulic power plus service factor
 - Temperature ratings exceed maximum process temperature
 
-**F-04-06:** System shall perform Historical Validation (L6):
-
-- Compare against similar past projects
-- Flag if specification deviates >30% from historical norms
-- Suggest "typical" values from past successful RFQs
-
-**F-04-07:** System shall calculate composite Confidence Score (0.0-1.0) based on:
+**F-04-05:** System shall calculate a composite Confidence Score (0.0–1.0) based on:
 
 - LLM token probabilities (30%)
 - Schema compliance (25%)
 - Cross-reference consistency (25%)
-- Historical similarity (20%)
+- Engineering logic checks (20%)
 
 ---
 
@@ -490,7 +335,7 @@ Multi-layer validation system ensuring extracted data meets engineering standard
 
 #### 3.5.1 Description
 
-Intelligent routing of extractions to engineers based on confidence scores, with specialized UI for validation and correction.
+Intelligent routing of extractions to engineers based on confidence scores, with specialized UI for validation, correction, and adaptive prompt-based revision. Engineers may request changes to any field via prompt or by uploading additional documents; the system adapts accordingly.
 
 #### 3.5.2 Functional Requirements
 
@@ -500,11 +345,11 @@ Intelligent routing of extractions to engineers based on confidence scores, with
 - **Quick Review:** 0.85 ≤ Confidence < 0.95 OR contains critical field → Standard review queue
 - **Detailed Review:** Confidence < 0.85 OR discrepancies detected → Expert review queue
 
-**F-05-02:** System shall provide Review Workbench UI with:
+**F-05-02:** System shall provide a Review Workbench UI with:
 
 - Three-panel layout: Source Documents | Extracted Data | RFQ Preview
-- Synchronized scrolling between source and extraction
-- Color-coded confidence indicators (green ≥0.95, yellow 0.85-0.95, red <0.85)
+- Synchronized scrolling between source and extracted data
+- Color-coded confidence indicators (green ≥0.95, yellow 0.85–0.95, red <0.85)
 
 **F-05-03:** System shall support inline editing:
 
@@ -513,37 +358,29 @@ Intelligent routing of extractions to engineers based on confidence scores, with
 - Track all changes with timestamp and user
 - Show "original | modified" diff view
 
-**F-05-04:** System shall provide source linking:
+**F-05-04:** System shall support source linking:
 
-- Click "View Source" on any field → jump to exact page/location in PDF
+- Click "View Source" on any field to jump to the exact page/location in the source PDF
 - Highlight relevant text in source document
-- Support multiple sources (show all locations where value appears)
 
-**F-05-05:** System shall support discrepancy resolution:
+**F-05-05:** System shall support adaptive revision via prompt:
+
+- Engineer can issue a natural-language prompt to modify a field or section (e.g., "Change all motor ratings to IE3")
+- Engineer can upload a supplementary document and trigger re-extraction
+- System tracks all prompt-driven changes in audit log
+
+**F-05-06:** System shall support discrepancy resolution:
 
 - Side-by-side comparison of conflicting sources
 - Engineer selects which source to trust
-- Option to "escalate to client" for clarification
 - Resolution logged for future reference
-
-**F-05-06:** System shall support batch operations:
-
-- Multi-select equipment items
-- Apply correction to all selected (e.g., change material grade for all pumps)
-- Bulk approve after spot-checking samples
 
 **F-05-07:** System shall support comment threads:
 
 - @mention colleagues
-- Attach files (photos, sketches, client emails)
+- Attach supporting files
 - Mark as resolved/unresolved
 - Email notifications for mentions
-
-**F-05-08:** System shall track review metrics:
-
-- Time spent reviewing per equipment item
-- Correction rate by field type
-- Reviewer accuracy (corrections that were later reversed)
 
 ---
 
@@ -551,119 +388,102 @@ Intelligent routing of extractions to engineers based on confidence scores, with
 
 #### 3.6.1 Description
 
-Populate client-specific templates with extracted and validated equipment data.
+Populate the standard equipment datasheet template with extracted and validated data. There is one unified RFQ template format used across all equipment types. The template structure accommodates all major equipment categories found in water and wastewater treatment projects.
 
-#### 3.6.2 Functional Requirements
+#### 3.6.2 RFQ Template Structure
 
-**F-06-01:** System shall support template types:
+The single RFQ template is an Excel-based Equipment Datasheet organized into the following sections:
 
-- **RAS Pump Datasheet** (mechanical equipment)
-- **TC-CS Technical Clearance** (screens, conveyors)
-- **Variance Analysis** (proposal vs. detailed engineering comparison)
-- **Generic Equipment Datasheet** (customizable)
+**Section: Header**
 
-**F-06-02:** System shall auto-select template based on:
+- Project, Location, Client, Consultant
+- Internal Document No., Client Document No.
 
-- Equipment category (pump → RAS Pump template)
-- Client (ADNOC, MWSS, etc. have specific formats)
-- Region (Middle East, India, Africa have different standard clauses)
+**Section: Process Data**
 
-**F-06-03:** System shall populate templates with:
+- Fluid Handled, Quantity (Nos.)
+- Capacity (m³/hr), Ambient Temperature (°C)
+- Solid Handling Size (mm), Suction Pressure (bar)
+- Differential Head (mwc), Head Range (min/max, mwc)
+- Service Duty
 
-- Header information from project metadata
-- Process data from extraction
-- Performance data with unit conversions as needed
-- Material specifications with full descriptions (not just codes)
-- Motor data with Egyptian Code service factors applied
-- Vendor scope checklists pre-populated based on Wabag standards
+**Section: Performance Data**
+
+- Type, Impeller Type, Design Standard
+- Full Load Speed (rpm), No. of Stages
+- Pump/Equipment Efficiency (%), Power at Duty Point (kW)
+- Shut-Off Head (m)
+
+**Section: Material of Construction**
+
+- Impeller, Casing, Shaft, Seal Type
+- Fasteners, Foundation Bolts, Bearing
+- Guide Rail, Lifting Chain (where applicable)
+
+**Section: Drive Motor**
+
+- Type, Rating (kW), Speed (rpm)
+- Starting Method (DOL, Star-Delta, VFD)
+- Motor Efficiency Class (IE2, IE3, IE4)
+- Power Supply (V/Ph/Hz), Ingress Protection
+- Insulation Class, Mounting/Frame Size
+- Sensors: Moisture, Thermal (3×PTC), Bearing PT100, Vibration
+- Cooling Method
+
+**Section: Vendor Scope Checklist**
+
+- Equipment (boolean), Motor (boolean)
+- Cables, Guide Rails, Pedestal Coupling, Lifting Chain with Shackles
+- Spare Parts (array)
+
+#### 3.6.3 Functional Requirements
+
+**F-06-01:** System shall use a single unified Equipment Datasheet template for all equipment types
+
+**F-06-02:** System shall auto-populate all template sections from validated extraction data
+
+**F-06-03:** System shall apply Egyptian Code service factors to motor ratings:
+- Motors < 40 kW: +25%
+- Motors 40–100 kW: +20%
+- Motors > 100 kW: +15%
 
 **F-06-04:** System shall preserve Excel features:
 
 - Formulas (e.g., auto-calculate efficiency from power/flow/head)
 - Conditional formatting (flag values outside norms)
-- Data validation dropdowns (e.g., material selection lists)
-- Protected cells (prevent editing of calculated fields)
+- Data validation dropdowns (material selection lists)
+- Protected cells for calculated fields
 
-**F-06-05:** System shall generate output formats:
+**F-06-05:** System shall generate output in the following formats:
 
-- Excel (.xlsx) - primary editable format
-- PDF - for client/vendor distribution
-- JSON - for system integration
-- XML - for SAP ERP import
+- Excel (.xlsx) — primary editable format
+- PDF — for distribution to vendors
 
 **F-06-06:** System shall support package grouping:
 
-- Auto-group equipment by category (all pumps → Package A)
+- Auto-group equipment items by category
 - Allow manual reassignment
 - Generate cover sheet with package summary
-- Create vendor distribution lists per package
 
 ---
 
-### 3.7 Feature: Variance Analysis (F-07)
+### 3.7 Feature: Project Archive (F-07)
 
 #### 3.7.1 Description
 
-Compare equipment specifications between proposal stage and detailed engineering stage, highlighting changes for client approval.
+Maintain a structured archive of all project documents, extracted data, and generated RFQs. The system must support the company's consistent undertaking of multiple concurrent projects, each requiring multiple RFQs across project lifetime.
 
 #### 3.7.2 Functional Requirements
 
-**F-07-01:** System shall import proposal stage data (from legacy systems or uploaded files)
+**F-07-01:** System shall organize all data under a project hierarchy (Project → Equipment → RFQ Packages)
 
-**F-07-02:** System shall compare proposal vs. detailed engineering:
+**F-07-02:** System shall enforce project-scoped access control: users see only projects they are assigned to
 
-- Quantity changes (e.g., 2 pumps → 3 pumps)
-- Specification changes (e.g., SS304 → SS316L)
-- Performance changes (e.g., 45 m³/hr → 50 m³/hr)
+**F-07-03:** System shall maintain revision history for all generated RFQ documents
 
-**F-07-03:** System shall classify variances:
+**F-07-04:** System shall link generated RFQs to their source documents for full audit trail
 
-- **Client-driven:** Change requested by client (billable variation)
-- **Design evolution:** Technical optimization (internal cost)
-- **Error correction:** Mistake in proposal (internal cost)
-- **Regulatory:** New code requirement (negotiate with client)
-
-**F-07-04:** System shall generate Variance Analysis report:
-
-- Side-by-side comparison table
-- Financial impact estimate (if cost data available)
-- Approval signature blocks
-- Supporting documentation references
-
----
-
-### 3.8 Feature: System Integration (F-08)
-
-#### 3.8.1 Description
-
-Export RFQ data to external systems and distribute to vendors.
-
-#### 3.8.2 Functional Requirements
-
-**F-08-01:** System shall integrate with SAP ERP:
-
-- Create RFQ headers in SAP MM module
-- Upload item details and specifications
-- Attach generated documents
-- Update status when vendor quotes received
-
-**F-08-02:** System shall support vendor portal integration:
-
-- API upload to approved vendor platforms
-- Email distribution with formatted PDF attachments
-- Tracking of delivery and open rates
-
-**F-08-03:** System shall integrate with Document Management System:
-
-- Store generated RFQs in project folder
-- Maintain revision history
-- Link to source documents for audit trail
-
-**F-08-04:** System shall provide SSO integration:
-
-- Azure AD authentication
-- Role-based access control (RBAC)
-- Project-based permissions (engineer sees only assigned projects)
+**F-07-05:** System shall support search across all projects by equipment tag, project name, or client
 
 ---
 
@@ -674,8 +494,8 @@ Export RFQ data to external systems and distribute to vendors.
 **UI-01: Project Dashboard**
 
 - List view with filters (client, status, date range)
-- Kanban board view (uploading → processing → reviewing → completed)
-- Quick stats: projects this month, pending reviews, accuracy trend
+- Kanban board view (Uploading → Processing → Reviewing → Completed)
+- Quick stats: active projects, pending reviews, accuracy trend
 
 **UI-02: Upload Wizard**
 
@@ -689,35 +509,27 @@ Export RFQ data to external systems and distribute to vendors.
 - Three-panel responsive layout (collapsible panels)
 - PDF viewer with annotation tools
 - Spreadsheet-like data editor
-- Real-time collaboration indicators
+- Prompt input box for adaptive revisions
 
 **UI-04: Admin Dashboard**
 
 - User management
-- Template editor (WYSIWYG Excel template builder)
+- Template viewer/editor
 - System health monitoring
-- Cost tracking (LLM usage, storage)
+- LLM usage and cost tracking
 
-### 4.2 Hardware Interfaces
-
-Not applicable - web-based system.
-
-### 4.3 Software Interfaces
+### 4.2 Software Interfaces
 
 | Interface           | Protocol   | Data Format | Purpose                            |
 | :------------------ | :--------- | :---------- | :--------------------------------- |
 | Claude Opus 4.6 API | HTTPS/REST | JSON        | Primary extraction engine          |
 | Kimi 2.5 API        | HTTPS/REST | JSON        | Fallback/cost-optimized extraction |
-| SAP ERP             | RFC/OData  | IDoc/JSON   | Procurement integration            |
-| Azure AD            | SAML 2.0   | XML         | SSO authentication                 |
-| Email Gateway       | SMTP/IMAP  | MIME        | Vendor distribution                |
-| Document Management | REST API   | JSON/Binary | File storage                       |
+| Document Storage    | REST API   | JSON/Binary | File storage and retrieval         |
 
-### 4.4 Communications Interfaces
+### 4.3 Communications Interfaces
 
 - WebSocket for real-time updates (processing progress, notifications)
 - Server-Sent Events (SSE) for long-running extraction jobs
-- Email notifications for task assignments and completions
 
 ---
 
@@ -725,35 +537,31 @@ Not applicable - web-based system.
 
 ### 5.1 Performance Requirements
 
-**PR-01:** Upload to extraction completion: < 10 minutes for 200-page document set
+**PR-01:** Upload to extraction completion: < 10 minutes for a 200-page document set
 
 **PR-02:** Review workbench load time: < 2 seconds for 100 equipment items
 
 **PR-03:** RFQ generation time: < 30 seconds per package
 
-**PR-04:** Concurrent users: Support 50+ engineers, 10+ projects simultaneously
+**PR-04:** Concurrent users: Support 50+ engineers across 10+ simultaneous projects
 
-**PR-05:** API response time: < 500ms for 95% of requests
+**PR-05:** API response time: < 500 ms for 95% of requests
 
-### 5.2 Safety Requirements
-
-Not applicable - non-safety-critical business system.
-
-### 5.3 Security Requirements
+### 5.2 Security Requirements
 
 **SR-01:** Data encryption at rest: AES-256
 
 **SR-02:** Data encryption in transit: TLS 1.3
 
-**SR-03:** Authentication: Multi-factor authentication for admin roles
+**SR-03:** Authentication: Role-based login with access control per project
 
 **SR-04:** Authorization: Project-based access control (engineer sees only assigned projects)
 
 **SR-05:** Audit logging: Immutable logs of all data access and modifications
 
-**SR-06:** Data residency: Configurable storage region per project (Middle East, India, EU)
+**SR-06:** Data residency: Configurable storage region per project (Middle East, Egypt, EU)
 
-### 5.4 Software Quality Attributes
+### 5.3 Software Quality Attributes
 
 **QA-01: Availability:** 99.5% uptime (scheduled maintenance windows excluded)
 
@@ -765,17 +573,13 @@ Not applicable - non-safety-critical business system.
 
 **QA-05: Usability:** < 30 minutes training required for basic operation
 
-### 5.5 Business Rules
+### 5.4 Business Rules
 
-**BR-01:** Egyptian Code Service Factor: Motors < 40kW: 25%; 40-100kW: 20%; > 100kW: 15%
+**BR-01:** Egyptian Code Service Factor: Motors < 40 kW: 25%; 40–100 kW: 20%; > 100 kW: 15%
 
-**BR-02:** Material Approval: All materials must exist in Wabag Material Master v2024.1 or later
+**BR-02:** Revision Control: RFQs must include source document revision references (e.g., "Based on Rev C")
 
-**BR-03:** Standard Currency: All costs in project currency (EGP, USD, EUR) with conversion timestamp
-
-**BR-04:** Revision Control: RFQs must include document revision numbers (e.g., "Based on Rev C")
-
-**BR-05:** Approval Authority: RFQs > $500K value require Senior Engineer sign-off
+**BR-03:** Approval Authority: RFQs above a defined value threshold require Senior Engineer sign-off
 
 ---
 
@@ -783,127 +587,128 @@ Not applicable - non-safety-critical business system.
 
 ### 6.1 Logical Data Model
 
-**Entity Relationship Diagram (Conceptual):**
-
-plain
-
-Copy
-
-```plain
+```
 ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│   Project   │◄─────►│   Document  │◄─────►│   Extraction│
-│             │  1:M  │             │  1:1   │   Job       │
+│   Project   │◄─────►│   Document  │◄─────►│  Extraction │
+│             │  1:M  │             │  1:1  │    Job      │
 └──────┬──────┘       └─────────────┘       └──────┬──────┘
-       │                                            │
-       │ 1:M                                        │ 1:M
-       ▼                                            ▼
-┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│  Equipment  │◄─────►│Specification│       │   RFQ       │
-│   Master    │  1:M  │   Value     │       │  Package    │
-└──────┬──────┘       └─────────────┘       └──────┬──────┘
-       │                                            │
-       │ M:N                                        │ 1:M
-       ▼                                            ▼
-┌─────────────┐                            ┌─────────────┐
-│   Material  │                            │   Vendor    │
-│   Grade     │                            │             │
-└─────────────┘                            └─────────────┘
+       │                                           │
+       │ 1:M                                       │ 1:M
+       ▼                                           ▼
+┌─────────────┐       ┌─────────────┐      ┌─────────────┐
+│  Equipment  │◄─────►│Specification│      │    RFQ      │
+│   Master    │  1:M  │   Value     │      │  Package    │
+└─────────────┘       └─────────────┘      └─────────────┘
 ```
 
 ### 6.2 Data Dictionary
 
 **Table: projects**
 
-Table
-
-Copy
-
-| Field        | Type         | Description         | Constraints                        |
-| :----------- | :----------- | :------------------ | :--------------------------------- |
-| project_id   | UUID         | Primary key         | PK, auto-generated                 |
-| project_code | VARCHAR(50)  | Wabag internal code | Unique, indexed                    |
-| project_name | VARCHAR(255) | Descriptive name    | Not null                           |
-| client_id    | UUID         | FK to clients       | Indexed                            |
-| region       | ENUM         | Geographic region   | ME, India, Africa, EU              |
-| status       | ENUM         | Workflow status     | Draft, Active, Completed, Archived |
-| created_at   | TIMESTAMP    | Creation time       | Auto-set                           |
-| updated_at   | TIMESTAMP    | Last modification   | Auto-update                        |
+| Field        | Type         | Description         | Constraints                         |
+| :----------- | :----------- | :------------------ | :---------------------------------- |
+| project_id   | UUID         | Primary key         | PK, auto-generated                  |
+| project_code | VARCHAR(50)  | Internal code       | Unique, indexed                     |
+| project_name | VARCHAR(255) | Descriptive name    | Not null                            |
+| client_id    | UUID         | FK to clients       | Indexed                             |
+| region       | ENUM         | Geographic region   | ME, Africa, EU                      |
+| status       | ENUM         | Workflow status     | Draft, Active, Completed, Archived  |
+| created_at   | TIMESTAMP    | Creation time       | Auto-set                            |
+| updated_at   | TIMESTAMP    | Last modification   | Auto-update                         |
 
 **Table: equipment_master**
 
-Table
-
-Copy
-
-| Field             | Type         | Description           | Constraints                          |
-| :---------------- | :----------- | :-------------------- | :----------------------------------- |
-| equipment_id      | UUID         | Primary key           | PK                                   |
-| project_id        | UUID         | FK to project         | Indexed, cascade delete              |
+| Field             | Type         | Description           | Constraints                           |
+| :---------------- | :----------- | :-------------------- | :------------------------------------ |
+| equipment_id      | UUID         | Primary key           | PK                                    |
+| project_id        | UUID         | FK to project         | Indexed, cascade delete               |
 | tag_number        | VARCHAR(20)  | Equipment tag         | Not null, format: [A-Z]{1,2}-\d{2,4} |
-| category          | ENUM         | Equipment type        | pump, blower, valve, tank, etc.      |
-| description       | TEXT         | Narrative description |                                      |
-| specifications    | JSONB        | Flexible spec storage | GIN indexed                          |
-| confidence_score  | DECIMAL(3,2) | 0.00-1.00             |                                      |
-| validation_status | ENUM         | Review state          | pending, approved, corrected         |
-| extracted_at      | TIMESTAMP    | Extraction time       |                                      |
-| reviewed_by       | UUID         | FK to users           | Nullable                             |
-| reviewed_at       | TIMESTAMP    | Review completion     | Nullable                             |
+| category          | ENUM         | Equipment type        | pump, blower, valve, tank, etc.       |
+| description       | TEXT         | Narrative description |                                       |
+| specifications    | JSONB        | Flexible spec storage | GIN indexed                           |
+| confidence_score  | DECIMAL(3,2) | 0.00–1.00             |                                       |
+| validation_status | ENUM         | Review state          | pending, approved, corrected          |
+| extracted_at      | TIMESTAMP    | Extraction time       |                                       |
+| reviewed_by       | UUID         | FK to users           | Nullable                              |
+| reviewed_at       | TIMESTAMP    | Review completion     | Nullable                              |
 
 **Table: rfq_packages**
 
-Table
-
-Copy
-
-| Field           | Type         | Description        | Constraints                        |
-| :-------------- | :----------- | :----------------- | :--------------------------------- |
-| rfq_id          | UUID         | Primary key        | PK                                 |
-| project_id      | UUID         | FK to project      | Indexed                            |
-| package_name    | VARCHAR(100) | Descriptive name   | Not null                           |
-| template_type   | ENUM         | RFQ format         | RAS_PUMP, TC_CS, VARIANCE, GENERIC |
-| equipment_ids   | UUID[]       | Array of equipment | Foreign key array                  |
-| generated_files | JSONB        | File metadata      |                                    |
-| status          | ENUM         | Package state      | draft, approved, sent              |
-| approved_by     | UUID         | FK to users        | Nullable                           |
-| approved_at     | TIMESTAMP    | Approval time      | Nullable                           |
+| Field           | Type         | Description        | Constraints               |
+| :-------------- | :----------- | :----------------- | :------------------------ |
+| rfq_id          | UUID         | Primary key        | PK                        |
+| project_id      | UUID         | FK to project      | Indexed                   |
+| package_name    | VARCHAR(100) | Descriptive name   | Not null                  |
+| equipment_ids   | UUID[]       | Equipment array    | Foreign key array         |
+| generated_files | JSONB        | File metadata      |                           |
+| status          | ENUM         | Package state      | draft, approved, sent     |
+| approved_by     | UUID         | FK to users        | Nullable                  |
+| approved_at     | TIMESTAMP    | Approval time      | Nullable                  |
 
 ### 6.3 Data Retention
 
-**Active Projects:** Full data retention for project duration + 7 years (statute of limitations)
+**Active Projects:** Full data retention for project duration + 7 years
 
 **Completed Projects:** Archive to cold storage after 2 years, retain metadata for 10 years
 
 **Audit Logs:** Immutable retention for 10 years
 
-**LLM Training Data:** Anonymized corrections retained indefinitely for model improvement
+---
+
+## 7. FUTURE PHASES
+
+### 7.1 Phase 2 — Compliance Matrix Generation
+
+#### 7.1.1 Overview
+
+After an RFQ is issued and vendor offers are received, the next step is evaluating those offers against the technical requirements specified in the RFQ. This is currently a manual process performed by the technical engineer. Phase 2 will automate this through an AI-generated Compliance Matrix.
+
+#### 7.1.2 Concept
+
+The Compliance Matrix is a structured comparison document that evaluates each vendor's offer item by item against the issued RFQ. Each line item is assigned a score and a remark explaining its compliance status. The output consolidates all vendor offers into a single Excel document, providing management-level insights for decision-making.
+
+**Typical flow:**
+
+1. Engineer uploads the issued RFQ and all received vendor offers
+2. System parses each offer and maps line items to the corresponding RFQ fields
+3. System generates a scored compliance table per vendor, then a consolidated multi-vendor comparison sheet
+4. Engineer reviews and validates the matrix
+5. Final document is exported for management review and decision-making
+
+#### 7.1.3 Scope of Phase 2 Features
+
+**CM-01:** System shall accept uploaded vendor offer documents (PDF, DOCX, XLSX) alongside the original issued RFQ
+
+**CM-02:** System shall extract and map vendor-provided values to corresponding RFQ fields
+
+**CM-03:** System shall score each line item against the RFQ requirement:
+
+- **Compliant:** Vendor value meets or exceeds the RFQ requirement
+- **Deviation:** Vendor value differs within an acceptable tolerance
+- **Non-Compliant:** Vendor value does not meet the RFQ requirement
+- **Not Provided:** Vendor did not address this item
+
+**CM-04:** System shall generate per-vendor compliance summary with an overall compliance score
+
+**CM-05:** System shall generate a consolidated multi-vendor comparison sheet suitable for management review
+
+**CM-06:** System shall allow the engineer to add remarks, override scores, and annotate individual items
+
+**CM-07:** System shall export the Compliance Matrix as Excel (.xlsx) and PDF
+
+#### 7.1.4 Dependencies
+
+Phase 2 depends on the completion and stability of Phase 1, specifically:
+
+- The structured RFQ data model (so the system knows what was required)
+- The document ingestion and extraction pipeline (reused for parsing vendor offers)
+- The review workbench UI (extended for compliance review)
 
 ---
 
-## 7. APPENDICES
+## 8. APPENDICES
 
-### Appendix A: Analysis of Real-World Documents
-
-**Source:** 03_RFQ_Templates.xlsx (analyzed February 2026)
-
-**Key Findings:**
-
-1. **Template Complexity:** RAS Pump template has 63 rows across 12 columns, spanning 8 major sections (Process Data, Performance Data, Material, Motor, etc.)
-2. **Data Relationships:** Equipment specifications cross-reference multiple documents:
-   - Capacity appears in Hydraulic Calcs (primary), Process Simulation (validation), Equipment List (quantity)
-   - Material specifications in Employer Specs (requirements) vs. RFQ (vendor proposal)
-
-3. **Conditional Logic:** Motor selection depends on calculated power + service factor (Egyptian Code)
-   - Formula: `Motor_kW = Hydraulic_Power_kW × (1 + Service_Factor_Percent)`
-   - Where Service_Factor_Percent = 0.25 if <40kW, 0.20 if 40-100kW, 0.15 if >100kW
-
-4. **Vendor Scope Variability:** Checklist items vary by project (some include cables, some don't)
-5. **Revision Tracking:** Documents show evolution from "Proposal Stage" to "Detailed Engineering" with variance tracking
-
-### Appendix B: Glossary
-
-Table
-
-Copy
+### Appendix A: Glossary
 
 | Term       | Definition                                                     |
 | :--------- | :------------------------------------------------------------- |
@@ -917,36 +722,27 @@ Copy
 | **PT100**  | Platinum resistance thermometer (temperature sensor)           |
 | **PTC**    | Positive Temperature Coefficient thermistor (motor protection) |
 | **RAS**    | Return Activated Sludge (wastewater treatment process)         |
-| **RAG**    | Retrieval-Augmented Generation (LLM technique)                 |
 | **SBU**    | Strategic Business Unit                                        |
 | **SS316L** | Stainless Steel grade 316 Low carbon                           |
 | **TEFC**   | Totally Enclosed Fan Cooled motor                              |
 | **VFD**    | Variable Frequency Drive                                       |
 
-### Appendix C: Open Issues
+### Appendix B: Open Issues
 
-Table
+| ID    | Description                                              | Impact | Target       |
+| :---- | :------------------------------------------------------- | :----- | :----------- |
+| OI-01 | DWG file parsing for native CAD extraction               | Medium | Phase 1 v1.1 |
+| OI-02 | Arabic text RTL support in generated PDFs                | Low    | Phase 1 v1.1 |
+| OI-03 | Mobile offline review mode                               | Medium | Phase 2      |
+| OI-04 | AI-powered vendor quote comparison (Compliance Matrix)   | High   | Phase 2      |
 
-Copy
+### Appendix C: Document Change History
 
-| ID    | Description                                       | Impact | Resolution Target |
-| :---- | :------------------------------------------------ | :----- | :---------------- |
-| OI-01 | DWG file parsing for native CAD extraction        | Medium | Phase 2           |
-| OI-02 | Arabic text RTL support in generated PDFs         | Low    | Phase 2           |
-| OI-03 | Integration with legacy Wabag ERP (non-SAP sites) | High   | Phase 3           |
-| OI-04 | Mobile offline review mode                        | Medium | Phase 3           |
-| OI-05 | AI-powered vendor quote comparison                | Low    | Future release    |
-
-### Appendix D: Document Change History
-
-Table
-
-Copy
-
-| Version | Date       | Author        | Changes                                                                                                                              |
-| :------ | :--------- | :------------ | :----------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2026-02-15 | Initial Draft | Baseline requirements                                                                                                                |
-| 2.0     | 2026-02-18 | Revised       | Added real-world data structures from RFQ Templates.xlsx analysis, clarified Claude Opus 4.6 integration, expanded validation matrix |
+| Version | Date       | Author        | Changes                                                                                                                                     |
+| :------ | :--------- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0     | 2026-02-15 | Initial Draft | Baseline requirements                                                                                                                       |
+| 2.0     | 2026-02-18 | Revised       | Added real-world data structures from RFQ Templates analysis, clarified Claude Opus 4.6 integration, expanded validation matrix             |
+| 3.0     | 2026-04-15 | Revised       | Removed SAP ERP and vendor portal integrations; simplified to single RFQ template type; added Compliance Matrix as Phase 2 future scope     |
 
 ---
 
