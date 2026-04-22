@@ -247,7 +247,9 @@ Every extracted value must be auditable: traceable to a source, assigned a confi
 
 ### F-06: RFQ Generation
 
-Templates are **fixed and immutable**. They are authored once by the engineering team and stored in the template library (§F-11). The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Template structure, headers, formulas, and conditional formatting are preserved byte-for-byte in the output.
+Templates are **fixed and immutable per equipment type** — the engineering team authors one canonical template per equipment category (e.g. one blower template, one RAS pump template, one mixer template). These templates live **outside** this system; the engineer uploads the appropriate template(s) in the same batch as the source documents (§F-01), classified via the `03_RFQ*` filename pattern (§F-02). See §F-11 for template handling. The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Template structure, headers, formulas, and conditional formatting are preserved byte-for-byte in the output.
+
+> The eight template structures below are **illustrative examples** derived from past Wabag projects (see Appendix A). They document what the engineer-authored canonical templates typically look like for common equipment types; the system does not bundle these templates — they arrive with the engineer's upload batch.
 
 Six primary template types:
 
@@ -393,14 +395,15 @@ All extraction and generation actions are recorded:
 
 The audit trail is the definitive record of how each cell in the output Excel was produced. It is queryable per-project and per-field.
 
-### F-11: Project Template Library
+### F-11: Template Handling
 
-Maintain a library of fixed, immutable RFQ templates:
+The system does **not** maintain a server-side template library. Templates are authored and versioned by the engineering team externally, and uploaded with each project batch (classified via the `03_RFQ*` filename pattern, §F-02).
 
-- One canonical template per equipment category
-- Templates are versioned; only Admins can publish a new template version
-- Standard specification PDFs attached as references
-- The LLM consumes the template schema (editable cell map + unit map) but never edits the template file itself
+- Engineers upload one canonical fixed template per equipment type in the batch (e.g. blower datasheet, RAS pump datasheet, mixer datasheet — see §F-06 for illustrative structures)
+- Uploaded templates are treated as immutable inputs: the system only populates predefined editable cells; it never alters structure, headers, formulas, merged cells, or conditional formatting (F-04.R6)
+- The system consumes a per-template-type editable-cell map (maintained as application configuration, keyed by equipment category) to know which cells are writable
+- Standard specification PDFs referenced by a template are uploaded alongside it as regular source documents
+- No admin publish workflow, no server-side template versioning — revisions are tracked on the uploaded template filename (§5.6 / §F-02 `*Rev##*` pattern)
 
 ### F-12: Reporting Dashboard
 
@@ -442,9 +445,9 @@ RFQPackage stores generated file metadata and links to source equipment.
 
 ---
 
-## 5. Business Rules
+## 5. Engineering Reference (Informational Only)
 
-The standards and defaults below are **guidelines the LLM applies when generating the RFQ**. They are not optional; they are the non-negotiable engineering baseline for every output.
+> **Scope note.** The standards and defaults in §5.1–§5.8 are **engineering reference material** drawn from past Wabag projects (e.g. Old-Kohafa WWTP, see Appendix A). They describe how engineers typically size motors, pick materials, apply service factors, and stamp revisions when **authoring the canonical templates** external to this system. They are **not** runtime guardrails this system enforces. The only runtime invariants are the AI Operating Rules in §F-04, which explicitly forbid the system from sizing equipment, selecting motors, or setting flows (F-04.R6). These rules are retained in the SRS as shared vocabulary for engineers and prompt authors — not as system behavior.
 
 ### 5.1 Egyptian Code Service Factor
 
@@ -550,8 +553,8 @@ Standard material codes (expandable):
 │ prompt management, confidence scoring    │
 ├──────────────────────────────────────────┤
 │ L5 — Data Layer                          │
-│ PostgreSQL (Supabase), file storage,     │
-│ template library, audit trail            │
+│ PostgreSQL (Supabase), uploaded-file     │
+│ storage, audit trail                     │
 └──────────────────────────────────────────┘
 ```
 
@@ -628,6 +631,8 @@ Single Excel file download
 ---
 
 ## Appendix A: Real-World Reference — Old-Kohafa WWTP
+
+> **Reference only.** The equipment catalog and file names below are drawn from one real tender package. They informed the SRS design and illustrate what an engineer typically uploads, but the runtime system does not assume these specific categories, counts, or filenames — real batches may differ project-to-project.
 
 The following data was extracted from the actual Old-Kohafa WWTP (Fayoum Governorate) tender package to inform this SRS:
 

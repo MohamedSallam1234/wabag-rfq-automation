@@ -56,13 +56,14 @@ jobs:
   # ╔══════════════════════════════════════════════════════╗
   # ║  CHECK 2: Branch naming convention                   ║
   # ║                                                      ║
-  # ║  The source branch (head) must match one of:        ║
-  # ║    feature/*, fix/*, hotfix/*, docs/*, refactor/*,  ║
-  # ║    chore/*, test/*, ci/*, release/*, bump/*         ║
+  # ║  Unified pattern: <type>/pd-<N>[-<slug>]            ║
+  # ║   - pd-<N>     : Jira ticket PD-<N> (N > 0)         ║
+  # ║   - pd-00-<slug>: non-business work, slug required  ║
+  # ║   - main/develop also allowed                       ║
   # ║                                                      ║
-  # ║  This enforces feature-based branching (also called ║
-  # ║  "GitHub Flow" or "trunk-based with short-lived     ║
-  # ║  feature branches").                                 ║
+  # ║  IMPORTANT: this regex must match                    ║
+  # ║  scripts/check-branch-name.sh exactly. Any change   ║
+  # ║  here requires the same change there.               ║
   # ╚══════════════════════════════════════════════════════╝
   branch-name:
     name: Branch naming convention
@@ -71,8 +72,13 @@ jobs:
     steps:
       - name: Validate branch name
         run: |
+          # Force ASCII-strict regex semantics (matches scripts/check-branch-name.sh).
+          export LC_ALL=C
           BRANCH="${{ github.head_ref }}"
-          PATTERN="^(main|develop|feature|fix|hotfix|docs|refactor|chore|test|ci|cd|release|bump)/.+|^(main|develop)$"
+          # Unified regex — two alternatives for pd-<N>:
+          #   1. pd-<nonzero>[-<slug>]   (slug optional)
+          #   2. pd-0+-<slug>            (slug REQUIRED; prevents un-slugged chore masking)
+          PATTERN='^(main|develop)$|^(feature|fix|hotfix|docs|refactor|chore|test|ci|cd|release|bump)/(pd-[1-9][0-9]*(-[a-z0-9-]+)?|pd-0+-[a-z0-9-]+)$'
           echo "Branch: $BRANCH"
 
           if [[ "$BRANCH" =~ $PATTERN ]]; then
@@ -81,20 +87,21 @@ jobs:
             echo ""
             echo "FAILURE: Branch '$BRANCH' does not follow the naming convention."
             echo ""
-            echo "Allowed patterns:"
-            echo "  feature/<description>    - new functionality"
-            echo "  fix/<description>        - bug fixes"
-            echo "  hotfix/<description>     - urgent production fixes"
-            echo "  docs/<description>       - documentation changes"
-            echo "  refactor/<description>   - code restructuring"
-            echo "  chore/<description>      - maintenance tasks"
-            echo "  test/<description>       - test additions/changes"
-            echo "  ci/<description>         - CI pipeline changes"
-            echo "  cd/<description>         - CD pipeline changes"
-            echo "  release/<description>    - release preparation"
-            echo "  bump/<description>       - version bumps"
+            echo "Required format: <type>/pd-<N>[-<slug>]"
             echo ""
-            echo "Example: feature/document-upload-api"
+            echo "Examples (accepted):"
+            echo "  feature/pd-142"
+            echo "  fix/pd-89-race-condition"
+            echo "  chore/pd-00-cleanup-imports"
+            echo "  main"
+            echo "  develop"
+            echo ""
+            echo "Allowed types:"
+            echo "  feature, fix, hotfix, docs, refactor, chore, test, ci, cd, release, bump"
+            echo ""
+            echo "pd-<N> conventions:"
+            echo "  pd-<positive integer>  = Jira ticket PD-<N>"
+            echo "  pd-00-<slug>           = non-business/technical/tooling work (slug required)"
             exit 1
           fi
 
