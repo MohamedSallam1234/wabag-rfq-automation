@@ -26,8 +26,8 @@ readme = "README_BACKEND.md"                  # Long description file
 
 # Authors - Add anyone who contributes significantly
 authors = [
-    {name = "Mohamed Sallam", email = "muhammad.ibrahim.sallam@gmail.com"},
-    {name = "Momen Yasser", email = "momenyasser522@gmail.com"},
+    { name = "Mohamed Sallam", email = "muhammad.ibrahim.sallam@gmail.com" },
+    { name = "Momen Yasser", email = "momenyasser522@gmail.com" },
 ]
 
 # -----------------------------------------------------------------------------
@@ -42,30 +42,30 @@ dependencies = [
     # Core web framework with CLI tools included via [standard] extra
     # [standard] includes: uvicorn, fastapi-cli, python-multipart, email-validator
     "fastapi[standard]>=0.115",
-    "python-multipart>=0.0.18",     # File upload handling for RFQ documents
-    "pydantic-settings>=2.7",       # Configuration management with env vars support
+    "python-multipart>=0.0.18", # File upload handling for RFQ documents
+    "pydantic-settings>=2.7", # Configuration management with env vars support
 
     # === Database Layer ===
     # Async PostgreSQL stack with Supabase integration
-    "supabase>=2.13",               # Supabase client (Auth, DB, Storage)
-    "sqlalchemy[asyncio]>=2.0",     # ORM with async support
-    "asyncpg>=0.30",                # Async PostgreSQL driver (fast, native async)
-    "alembic>=1.14",                # Database migrations
-
+    "supabase>=2.13", # Supabase client (Auth, DB, Storage)
+    "sqlalchemy[asyncio]>=2.0", # ORM with async support
+    "asyncpg>=0.30", # Async PostgreSQL driver (fast, native async)
+    "alembic>=1.14", # Database migrations
     # === Document Processing ===
     # Libraries for handling RFQ documents in various formats
-    "pypdf>=5.4",                   # PDF text extraction and manipulation
-    "python-docx>=1.1",             # Microsoft Word document processing
-    "openpyxl>=3.1",                # Excel spreadsheet reading/writing
-    "pillow>=11.1",                 # Image processing (for scanned documents)
-
+    "pypdf>=5.4", # PDF text extraction and manipulation
+    "python-docx>=1.1", # Microsoft Word document processing
+    "openpyxl>=3.1", # Excel spreadsheet reading/writing
+    "pillow>=11.1", # Image processing (for scanned documents)
     # === External Services ===
-    "httpx>=0.28",                  # Modern async HTTP client for LLM APIs
-
+    "httpx>=0.28", # Modern async HTTP client for LLM APIs
     # === Report Generation ===
     # Tools for generating RFQ output documents
-    "reportlab>=4.2",               # PDF generation from templates
-    "jinja2>=3.1",                  # Template engine for document generation
+    "reportlab>=4.2", # PDF generation from templates
+    "jinja2>=3.1", # Template engine for document generation
+    "pyrefly>=0.63.0",
+    "pyright>=1.1.409",
+    "ty>=0.0.33",
 ]
 
 # -----------------------------------------------------------------------------
@@ -78,26 +78,26 @@ dependencies = [
 [dependency-groups]
 dev = [
     # === Testing ===
-    "pytest>=8.3",                  # Main testing framework
-    "pytest-asyncio>=0.25",         # Async test support (for FastAPI endpoints)
-    "pytest-cov>=6.1",              # Coverage reporting
+    "pytest>=8.3", # Main testing framework
+    "pytest-asyncio>=0.25", # Async test support (for FastAPI endpoints)
+    "pytest-cov>=6.1", # Coverage reporting
 
     # === Code Quality ===
-    "ruff>=0.9",                    # Fast linter and formatter (replaces flake8, black, isort)
-    "mypy>=1.14",                   # Static type checker
-    "pre-commit>=4.1",              # Git hooks for pre-commit checks
-    "commitizen>=4.4",              # Conventional commits and versioning
+    "ruff>=0.9", # Fast linter and formatter (replaces flake8, black, isort)
+    "mypy>=1.14", # Static type checker
+    "pre-commit>=4.1", # Git hooks for pre-commit checks
+    "commitizen>=4.4", # Conventional commits and versioning
 
     # === Type Stubs ===
     # Required by mypy to check untyped third-party libraries
-    "types-requests>=2.32",         # Stubs for requests library
-    "sqlalchemy[mypy]>=2.0",        # Stubs for SQLAlchemy
+    "types-requests>=2.32", # Stubs for requests library
+    "sqlalchemy[mypy]>=2.0", # Stubs for SQLAlchemy
 
     # === Static Security Scanning ===
     # Deterministic security checks, wired into pre-commit (plan §4.4).
     # Complementary to Codex's semantic audit (local, not CI-enforced).
-    "bandit[toml]>=1.7",            # Python security linter (AST-based)
-    "detect-secrets>=1.5",          # Secret scanning with baseline
+    "bandit[toml]>=1.7", # Python security linter (AST-based)
+    "detect-secrets>=1.5", # Secret scanning with baseline
 ]
 
 # -----------------------------------------------------------------------------
@@ -129,11 +129,11 @@ packages = ["src/app"]              # Map src/app to package 'app' (src layout)
 line-length = 100                   # Max line length (PEP 8 recommends 79, 100 is modern standard)
 target-version = "py312"            # Target Python 3.12+ syntax
 src = ["src", "tests"]              # Source directories for first-party code detection
-exclude = [                         # Files/directories to ignore
+exclude = [# Files/directories to ignore
     ".git",
     ".venv",
     "__pycache__",
-    "alembic/versions",             # Auto-generated migration files
+    "alembic/versions", # Auto-generated migration files
     ".pytest_cache",
     ".mypy_cache",
 ]
@@ -144,45 +144,45 @@ show-fixes = true                   # Show which issues were auto-fixed
 # See all rules: https://docs.astral.sh/ruff/rules/
 [tool.ruff.lint]
 select = [
-    "E", "W",    # pycodestyle (PEP 8 errors and warnings)
-    "F",         # Pyflakes (undefined names, unused imports)
-    "I",         # isort (import sorting)
-    "N",         # pep8-naming (naming conventions)
-    "UP",        # pyupgrade (modern Python syntax)
-    "B",         # flake8-bugbear (common bugs/design issues)
-    "SIM",       # flake8-simplify (code simplification)
-    "RUF",       # Ruff-specific rules
-    "D",         # pydocstyle (docstring conventions)
-    "ANN",       # flake8-annotations (type annotations required)
-    "S",         # flake8-bandit (security issues)
-    "C4",        # flake8-comprehensions (better comprehensions)
-    "PT",        # flake8-pytest-style (pytest best practices)
-    "RET",       # flake8-return (consistent return statements)
-    "ARG",       # flake8-unused-arguments
-    "PL",        # Pylint rules
+    "E", "W", # pycodestyle (PEP 8 errors and warnings)
+    "F", # Pyflakes (undefined names, unused imports)
+    "I", # isort (import sorting)
+    "N", # pep8-naming (naming conventions)
+    "UP", # pyupgrade (modern Python syntax)
+    "B", # flake8-bugbear (common bugs/design issues)
+    "SIM", # flake8-simplify (code simplification)
+    "RUF", # Ruff-specific rules
+    "D", # pydocstyle (docstring conventions)
+    "ANN", # flake8-annotations (type annotations required)
+    "S", # flake8-bandit (security issues)
+    "C4", # flake8-comprehensions (better comprehensions)
+    "PT", # flake8-pytest-style (pytest best practices)
+    "RET", # flake8-return (consistent return statements)
+    "ARG", # flake8-unused-arguments
+    "PL", # Pylint rules
 ]
 ignore = [
-    "D100",      # Ignore: Missing docstring in public module (too noisy early on)
-    "D104",      # Ignore: Missing docstring in public package (__init__.py)
-    "D203",      # Ignore: Conflicts with D211 (blank line before class)
-    "D213",      # Ignore: Conflicts with D212 (multi-line summary style)
-    "ANN401",    # Ignore: Allow typing.Any when necessary (e.g., dynamic data)
-    "S101",      # Ignore: Allow assert in production code (we use for type narrowing)
+    "D100", # Ignore: Missing docstring in public module (too noisy early on)
+    "D104", # Ignore: Missing docstring in public package (__init__.py)
+    "D203", # Ignore: Conflicts with D211 (blank line before class)
+    "D213", # Ignore: Conflicts with D212 (multi-line summary style)
+    "ANN401", # Ignore: Allow typing.Any when necessary (e.g., dynamic data)
+    "S101", # Ignore: Allow assert in production code (we use for type narrowing)
 ]
 
 # Per-file ignores - relax rules where appropriate
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
-    "D",         # Don't require docstrings in tests
-    "ANN",       # Don't require type annotations in tests
-    "S101",      # Allow assert in tests
-    "ARG",       # Unused fixtures are normal in pytest
-    "PLR2004",   # Magic values are fine in tests (assert x == 42)
+    "D", # Don't require docstrings in tests
+    "ANN", # Don't require type annotations in tests
+    "S101", # Allow assert in tests
+    "ARG", # Unused fixtures are normal in pytest
+    "PLR2004", # Magic values are fine in tests (assert x == 42)
 ]
 "alembic/**/*.py" = [
-    "D",         # No docstrings needed in migrations
-    "ANN",       # No type annotations needed
-    "INP001",    # Alembic files don't need __init__.py
+    "D", # No docstrings needed in migrations
+    "ANN", # No type annotations needed
+    "INP001", # Alembic files don't need __init__.py
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -216,14 +216,14 @@ warn_redundant_casts = true         # Warn about unnecessary type casts
 warn_unused_ignores = true          # Warn about unused # type: ignore comments
 show_error_codes = true             # Show error codes (for ignore targeting)
 warn_unreachable = true             # Warn about unreachable code (dead code)
-enable_error_code = [               # Enable specific error codes
-    "ignore-without-code",          # Require error codes in type: ignore
-    "redundant-expr",               # Warn about redundant expressions
-    "truthy-bool",                  # Warn about non-bool values in bool context
+enable_error_code = [# Enable specific error codes
+    "ignore-without-code", # Require error codes in type: ignore
+    "redundant-expr", # Warn about redundant expressions
+    "truthy-bool", # Warn about non-bool values in bool context
 ]
-plugins = [                         # Third-party plugins
-    "pydantic.mypy",                # Pydantic model support
-    "sqlalchemy.ext.mypy.plugin",   # SQLAlchemy ORM support
+plugins = [# Third-party plugins
+    "pydantic.mypy", # Pydantic model support
+    "sqlalchemy.ext.mypy.plugin", # SQLAlchemy ORM support
 ]
 
 # Ignore missing imports for libraries without type stubs
@@ -245,13 +245,13 @@ ignore_missing_imports = true
 # pattern matching. Docs: https://bandit.readthedocs.io/
 # -----------------------------------------------------------------------------
 [tool.bandit]
-exclude_dirs = [                    # Paths bandit must NOT scan
-    "tests",                        # Tests use asserts and mock patterns intentionally
-    ".venv",                        # Installed deps
-    "alembic/versions",             # Auto-generated migration code
+exclude_dirs = [# Paths bandit must NOT scan
+    "tests", # Tests use asserts and mock patterns intentionally
+    ".venv", # Installed deps
+    "alembic/versions", # Auto-generated migration code
 ]
-skips = [                           # Specific checks to skip globally
-    "B101",                         # assert_used — tests excluded anyway; belt-and-suspenders
+skips = [# Specific checks to skip globally
+    "B101", # assert_used — tests excluded anyway; belt-and-suspenders
 ]
 # severity = "medium"               # Uncomment if initial runs are too noisy
 # confidence = "medium"             # Uncomment to ignore low-confidence findings
@@ -264,16 +264,16 @@ skips = [                           # Specific checks to skip globally
 [tool.pytest.ini_options]
 asyncio_mode = "auto"               # Automatically handle async tests
 testpaths = ["tests"]               # Directory containing tests
-addopts = [                         # Default command-line options
-    "--cov=src/app",                # Measure coverage via source path (src layout)
-    "--cov-report=term-missing",    # Show missing lines in terminal
+addopts = [# Default command-line options
+    "--cov=src/app", # Measure coverage via source path (src layout)
+    "--cov-report=term-missing", # Show missing lines in terminal
     "--cov-report=xml:coverage.xml", # XML report consumed by SonarCloud
-    "--cov-fail-under=80",          # Require 80% minimum coverage
+    "--cov-fail-under=80", # Require 80% minimum coverage
 ]
-filterwarnings = [                  # Suppress noisy warnings
+filterwarnings = [# Suppress noisy warnings
     "ignore::DeprecationWarning",
 ]
-markers = [                         # Custom test markers
+markers = [# Custom test markers
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 
@@ -285,18 +285,18 @@ markers = [                         # Custom test markers
 [tool.coverage.run]
 source = ["src/app"]                # Measure coverage for this source path
 omit = [
-    "*/.venv/*",                    # Virtual environment
-    "*/tests/*",                    # Test files themselves
+    "*/.venv/*", # Virtual environment
+    "*/tests/*", # Test files themselves
     "*/test_*",
-    "*/migrations/*",               # Migration files
+    "*/migrations/*", # Migration files
 ]
 
 [tool.coverage.report]
-exclude_lines = [                   # Lines to exclude from coverage report
-    "pragma: no cover",             # Manual exclusion comment
-    "if TYPE_CHECKING:",            # Type-only imports block
-    "raise NotImplementedError",    # Abstract methods
-    "@abstractmethod",              # Decorator for abstract methods
+exclude_lines = [# Lines to exclude from coverage report
+    "pragma: no cover", # Manual exclusion comment
+    "if TYPE_CHECKING:", # Type-only imports block
+    "raise NotImplementedError", # Abstract methods
+    "@abstractmethod", # Decorator for abstract methods
 ]
 show_missing = true                 # Show line numbers of missing coverage
 skip_empty = true                   # Skip empty files in report
@@ -311,10 +311,10 @@ skip_empty = true                   # Skip empty files in report
 name = "cz_conventional_commits"    # Use conventional commits format
 version = "0.1.0"                   # Current version (bumped via cz bump)
 tag_format = "v$version"            # Git tag format (e.g., v0.1.0)
-version_files = [                   # Files containing version strings to update
-    "pyproject.toml:^version",      # Update version in this file
+version_files = [# Files containing version strings to update
+    "pyproject.toml:^version", # Update version in this file
 ]
-allowed_prefixes = [                # Allowed commit message prefixes
+allowed_prefixes = [# Allowed commit message prefixes
     "Merge",
     "Revert",
     "Initial",

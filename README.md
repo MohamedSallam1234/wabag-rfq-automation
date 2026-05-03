@@ -41,11 +41,9 @@ Auto-classify by filename prefix pattern:
 | --------------------------------- | ---------------------------------------------- |
 | `01_*`                            | Employer Technical Specifications              |
 | `02_*`                            | Process Engineering Profile                    |
-| `03_*` (specs)                    | Process Simulation Reports                     |
 | `03_RFQ*`                         | RFQ Template                                   |
 | `04_*`                            | Hydraulic Calculation Profile                  |
-| `05_*`                            | Hydraulic Profile (DWG/CAD)                    |
-| `06_*`                            | Equipment List                                 |
+| `05_*`                            | Equipment List                                 |
 | `SectionII_*`                     | Tender DataSheet                               |
 | `SectionIII_*`                    | Tender Evaluation Method                       |
 | `SectionIV_*`                     | Eligibility & Qualification Criteria           |
@@ -169,11 +167,11 @@ Equipment is organized by plant process area:
 
 These rules govern how the extraction engine and LLM layer process data. Each extracted field carries a `confidence` score (0.0–1.0) and a `source_ref` linking back to the originating document, page, and cell/section. The rules are the sole safeguard on output quality — there is no human review step — so they are enforced strictly.
 
-#### Rule 1 – Source of Truth
+#### Rule 1 – Source of Truth (F-04.R1)
 
 Only use uploaded documents and explicit user instructions. Never invent, guess, or assume values. If a value is not found in any source document → set the field to `null` with a `status` of `"TBD"` and `confidence: 0.0`.
 
-#### Rule 2 – Precedence Hierarchy
+#### Rule 2 – Precedence Hierarchy (F-04.R2)
 
 When the same field appears in multiple documents, resolve using this priority order:
 
@@ -185,7 +183,7 @@ When the same field appears in multiple documents, resolve using this priority o
 
 If conflict remains after applying precedence, store both values in a `conflicts[]` array on the field, set `confidence: 0.0`, and mark `status: "conflict"`. Never auto-resolve conflicts — emit the conflict as output metadata.
 
-#### Rule 3 – Cell Authorization & Output Metadata
+#### Rule 3 – Cell Authorization & Output Metadata (F-04.R3)
 
 Only populate fields that are mapped as `editable: true` in the template schema. Templates are fixed and immutable — the LLM only writes values into predefined editable cells. It must never alter template structure, headers, formulas, merged-cell layout, or conditional formatting.
 
@@ -197,7 +195,7 @@ Each AI-populated field must carry:
 
 Use the template's unit column to validate data types and unit consistency. Apply the VTF Rule: vendor-related fields default to `"VTF (Vendor to Furnish)"` unless specs explicitly provide a value.
 
-#### Rule 4 – Confidence-Based Field Population
+#### Rule 4 – Confidence-Based Field Population (F-04.R4)
 
 Each extracted field is assigned a confidence score that determines its status:
 
@@ -208,11 +206,11 @@ Each extracted field is assigned a confidence score that determines its status:
 | **C** | Partial match or inferred from context        | 0.4–0.84   | `"extracted"` (low-confidence flag in output metadata) |
 | **D** | No data found in any source                   | 0.0        | `"tbd"` — value is `null`                              |
 
-#### Rule 5 – Calculations
+#### Rule 5 – Calculations (F-04.R5)
 
 Only calculate if the formula is explicitly stated in documents AND all inputs are available with `confidence >= 0.85`. Never derive formulas or assume constants. Calculated values inherit the lowest confidence of their inputs.
 
-#### Rule 6 – RFQ Limitations
+#### Rule 6 – RFQ Limitations (F-04.R6)
 
 The system may transfer, copy, and match values between documents. The system may NOT:
 
@@ -222,11 +220,11 @@ The system may transfer, copy, and match values between documents. The system ma
 - Override any engineer-specified value
 - Modify the template layout, structure, or formulas
 
-#### Rule 7 – Safety & Integrity
+#### Rule 7 – Safety & Integrity (F-04.R7)
 
 Accuracy over completeness. Leaving a field as `"tbd"` is correct behavior. Speculative output is unacceptable. Every populated field must have a traceable `source_ref`.
 
-#### Rule 8 – Hard Stop Conditions
+#### Rule 8 – Hard Stop Conditions (F-04.R8)
 
 The extraction pipeline must halt and emit the partial output with explicit error flags when:
 
@@ -237,11 +235,11 @@ The extraction pipeline must halt and emit the partial output with explicit erro
 
 These conditions are recorded in the audit trail (§F-09) and surfaced as cell-level annotations in the generated Excel file.
 
-#### Rule 9 – Employer's Requirements Golden Rule
+#### Rule 9 – Employer's Requirements Golden Rule (F-04.R9)
 
 Employer's Requirements / Project Specifications always prevail over all other documents in any conflict. No averaging, interpolation, or interpretation. Values from `01_*` or `SectionVI_*` documents override all others with no exception.
 
-#### Rule 11 – Final Guiding Rule
+#### Rule 10 – Final Guiding Rule (F-04.R10)
 
 Every extracted value must be auditable: traceable to a source, assigned a confidence score, and defensible under review. The system's job is not to look complete — it is to be correct and transparent.
 
@@ -607,8 +605,8 @@ Single Excel file download
 
 ## 8. LLM Configuration
 
-- Primary model: opus (via OpenRouter, `moonshotai/kimi-k2`)
-- Fallback model: sonnet (via OpenRouter, `minimax/minimax-01`)
+- Primary model: opus (via OpenRouter)
+- Fallback model: sonnet (via OpenRouter)
 - Router tries primary, falls back on failure/timeout
 - Extraction uses structured JSON output mode
 - Equipment-specific extraction prompts per category (pump prompt differs from blower prompt differs from valve prompt)
