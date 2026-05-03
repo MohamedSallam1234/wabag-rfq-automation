@@ -41,11 +41,9 @@ Auto-classify by filename prefix pattern:
 | --------------------------------- | ---------------------------------------------- |
 | `01_*`                            | Employer Technical Specifications              |
 | `02_*`                            | Process Engineering Profile                    |
-| `03_*` (specs)                    | Process Simulation Reports                     |
 | `03_RFQ*`                         | RFQ Template                                   |
 | `04_*`                            | Hydraulic Calculation Profile                  |
-| `05_*`                            | Hydraulic Profile (DWG/CAD)                    |
-| `06_*`                            | Equipment List                                 |
+| `05_*`                            | Equipment List                                 |
 | `SectionII_*`                     | Tender DataSheet                               |
 | `SectionIII_*`                    | Tender Evaluation Method                       |
 | `SectionIV_*`                     | Eligibility & Qualification Criteria           |
@@ -169,11 +167,11 @@ Equipment is organized by plant process area:
 
 These rules govern how the extraction engine and LLM layer process data. Each extracted field carries a `confidence` score (0.0–1.0) and a `source_ref` linking back to the originating document, page, and cell/section. The rules are the sole safeguard on output quality — there is no human review step — so they are enforced strictly.
 
-#### Rule 1 – Source of Truth
+#### Rule 1 – Source of Truth (F-04.R1)
 
 Only use uploaded documents and explicit user instructions. Never invent, guess, or assume values. If a value is not found in any source document → set the field to `null` with a `status` of `"TBD"` and `confidence: 0.0`.
 
-#### Rule 2 – Precedence Hierarchy
+#### Rule 2 – Precedence Hierarchy (F-04.R2)
 
 When the same field appears in multiple documents, resolve using this priority order:
 
@@ -185,7 +183,7 @@ When the same field appears in multiple documents, resolve using this priority o
 
 If conflict remains after applying precedence, store both values in a `conflicts[]` array on the field, set `confidence: 0.0`, and mark `status: "conflict"`. Never auto-resolve conflicts — emit the conflict as output metadata.
 
-#### Rule 3 – Cell Authorization & Output Metadata
+#### Rule 3 – Cell Authorization & Output Metadata (F-04.R3)
 
 Only populate fields that are mapped as `editable: true` in the template schema. Templates are fixed and immutable — the LLM only writes values into predefined editable cells. It must never alter template structure, headers, formulas, merged-cell layout, or conditional formatting.
 
@@ -197,7 +195,7 @@ Each AI-populated field must carry:
 
 Use the template's unit column to validate data types and unit consistency. Apply the VTF Rule: vendor-related fields default to `"VTF (Vendor to Furnish)"` unless specs explicitly provide a value.
 
-#### Rule 4 – Confidence-Based Field Population
+#### Rule 4 – Confidence-Based Field Population (F-04.R4)
 
 Each extracted field is assigned a confidence score that determines its status:
 
@@ -208,11 +206,11 @@ Each extracted field is assigned a confidence score that determines its status:
 | **C** | Partial match or inferred from context        | 0.4–0.84   | `"extracted"` (low-confidence flag in output metadata) |
 | **D** | No data found in any source                   | 0.0        | `"tbd"` — value is `null`                              |
 
-#### Rule 5 – Calculations
+#### Rule 5 – Calculations (F-04.R5)
 
 Only calculate if the formula is explicitly stated in documents AND all inputs are available with `confidence >= 0.85`. Never derive formulas or assume constants. Calculated values inherit the lowest confidence of their inputs.
 
-#### Rule 6 – RFQ Limitations
+#### Rule 6 – RFQ Limitations (F-04.R6)
 
 The system may transfer, copy, and match values between documents. The system may NOT:
 
@@ -222,11 +220,11 @@ The system may transfer, copy, and match values between documents. The system ma
 - Override any engineer-specified value
 - Modify the template layout, structure, or formulas
 
-#### Rule 7 – Safety & Integrity
+#### Rule 7 – Safety & Integrity (F-04.R7)
 
 Accuracy over completeness. Leaving a field as `"tbd"` is correct behavior. Speculative output is unacceptable. Every populated field must have a traceable `source_ref`.
 
-#### Rule 8 – Hard Stop Conditions
+#### Rule 8 – Hard Stop Conditions (F-04.R8)
 
 The extraction pipeline must halt and emit the partial output with explicit error flags when:
 
@@ -237,17 +235,19 @@ The extraction pipeline must halt and emit the partial output with explicit erro
 
 These conditions are recorded in the audit trail (§F-09) and surfaced as cell-level annotations in the generated Excel file.
 
-#### Rule 9 – Employer's Requirements Golden Rule
+#### Rule 9 – Employer's Requirements Golden Rule (F-04.R9)
 
 Employer's Requirements / Project Specifications always prevail over all other documents in any conflict. No averaging, interpolation, or interpretation. Values from `01_*` or `SectionVI_*` documents override all others with no exception.
 
-#### Rule 11 – Final Guiding Rule
+#### Rule 10 – Final Guiding Rule (F-04.R10)
 
 Every extracted value must be auditable: traceable to a source, assigned a confidence score, and defensible under review. The system's job is not to look complete — it is to be correct and transparent.
 
 ### F-06: RFQ Generation
 
-Templates are **fixed and immutable**. They are authored once by the engineering team and stored in the template library (§F-11). The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Template structure, headers, formulas, and conditional formatting are preserved byte-for-byte in the output.
+Templates are **fixed and immutable per equipment type** — the engineering team authors one canonical template per equipment category (e.g. one blower template, one RAS pump template, one mixer template). These templates live **outside** this system; the engineer uploads the appropriate template(s) in the same batch as the source documents (§F-01), classified via the `03_RFQ*` filename pattern (§F-02). See §F-11 for template handling. The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Template structure, headers, formulas, and conditional formatting are preserved byte-for-byte in the output.
+
+> The eight template structures below are **illustrative examples** derived from past Wabag projects (see Appendix A). They document what the engineer-authored canonical templates typically look like for common equipment types; the system does not bundle these templates — they arrive with the engineer's upload batch.
 
 Six primary template types:
 
@@ -393,14 +393,15 @@ All extraction and generation actions are recorded:
 
 The audit trail is the definitive record of how each cell in the output Excel was produced. It is queryable per-project and per-field.
 
-### F-11: Project Template Library
+### F-11: Template Handling
 
-Maintain a library of fixed, immutable RFQ templates:
+The system does **not** maintain a server-side template library. Templates are authored and versioned by the engineering team externally, and uploaded with each project batch (classified via the `03_RFQ*` filename pattern, §F-02).
 
-- One canonical template per equipment category
-- Templates are versioned; only Admins can publish a new template version
-- Standard specification PDFs attached as references
-- The LLM consumes the template schema (editable cell map + unit map) but never edits the template file itself
+- Engineers upload one canonical fixed template per equipment type in the batch (e.g. blower datasheet, RAS pump datasheet, mixer datasheet — see §F-06 for illustrative structures)
+- Uploaded templates are treated as immutable inputs: the system only populates predefined editable cells; it never alters structure, headers, formulas, merged cells, or conditional formatting (F-04.R6)
+- The system consumes a per-template-type editable-cell map (maintained as application configuration, keyed by equipment category) to know which cells are writable
+- Standard specification PDFs referenced by a template are uploaded alongside it as regular source documents
+- No admin publish workflow, no server-side template versioning — revisions are tracked on the uploaded template filename (§5.6 / §F-02 `*Rev##*` pattern)
 
 ### F-12: Reporting Dashboard
 
@@ -442,9 +443,9 @@ RFQPackage stores generated file metadata and links to source equipment.
 
 ---
 
-## 5. Business Rules
+## 5. Engineering Reference (Informational Only)
 
-The standards and defaults below are **guidelines the LLM applies when generating the RFQ**. They are not optional; they are the non-negotiable engineering baseline for every output.
+> **Scope note.** The standards and defaults in §5.1–§5.8 are **engineering reference material** drawn from past Wabag projects (e.g. Old-Kohafa WWTP, see Appendix A). They describe how engineers typically size motors, pick materials, apply service factors, and stamp revisions when **authoring the canonical templates** external to this system. They are **not** runtime guardrails this system enforces. The only runtime invariants are the AI Operating Rules in §F-04, which explicitly forbid the system from sizing equipment, selecting motors, or setting flows (F-04.R6). These rules are retained in the SRS as shared vocabulary for engineers and prompt authors — not as system behavior.
 
 ### 5.1 Egyptian Code Service Factor
 
@@ -550,8 +551,8 @@ Standard material codes (expandable):
 │ prompt management, confidence scoring    │
 ├──────────────────────────────────────────┤
 │ L5 — Data Layer                          │
-│ PostgreSQL (Supabase), file storage,     │
-│ template library, audit trail            │
+│ PostgreSQL (Supabase), uploaded-file     │
+│ storage, audit trail                     │
 └──────────────────────────────────────────┘
 ```
 
@@ -604,8 +605,8 @@ Single Excel file download
 
 ## 8. LLM Configuration
 
-- Primary model: opus (via OpenRouter, `moonshotai/kimi-k2`)
-- Fallback model: sonnet (via OpenRouter, `minimax/minimax-01`)
+- Primary model: opus (via OpenRouter)
+- Fallback model: sonnet (via OpenRouter)
 - Router tries primary, falls back on failure/timeout
 - Extraction uses structured JSON output mode
 - Equipment-specific extraction prompts per category (pump prompt differs from blower prompt differs from valve prompt)
@@ -628,6 +629,8 @@ Single Excel file download
 ---
 
 ## Appendix A: Real-World Reference — Old-Kohafa WWTP
+
+> **Reference only.** The equipment catalog and file names below are drawn from one real tender package. They informed the SRS design and illustrate what an engineer typically uploads, but the runtime system does not assume these specific categories, counts, or filenames — real batches may differ project-to-project.
 
 The following data was extracted from the actual Old-Kohafa WWTP (Fayoum Governorate) tender package to inform this SRS:
 

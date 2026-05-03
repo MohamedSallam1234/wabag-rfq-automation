@@ -24,7 +24,6 @@ repos:
         always_run: true
         pass_filenames: false
         stages: [pre-commit]
-        pass_filenames: false
 
       - id: test
         name: test
@@ -33,7 +32,6 @@ repos:
         always_run: true
         pass_filenames: false
         stages: [pre-commit]
-        pass_filenames: false
 
       - id: ruff-format
         name: ruff format
@@ -42,7 +40,6 @@ repos:
         always_run: true
         pass_filenames: false
         stages: [pre-commit]
-        pass_filenames: false
 
       - id: ruff-lint
         name: ruff lint
@@ -51,7 +48,6 @@ repos:
         always_run: true
         pass_filenames: false
         stages: [pre-commit]
-        pass_filenames: false
 
       - id: mypy
         name: mypy type check
@@ -60,7 +56,24 @@ repos:
         always_run: true
         pass_filenames: false
         stages: [pre-commit]
-        pass_filenames: false
+
+  # ── Static security scanning ──────────────────────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: [-c, backend/pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        files: ^backend/src/
+        stages: [pre-commit]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: ^\.secrets\.baseline$
+        stages: [pre-commit]
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.0.0
