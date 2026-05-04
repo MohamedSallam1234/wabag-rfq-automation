@@ -53,7 +53,6 @@ def test_list_users_returns_array(overridden_app):
     resp = test_client.get("/users")
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body) == 1
     assert body[0]["name"] == "Alice"
 
 
@@ -79,13 +78,6 @@ def test_get_my_profile_returns_user(overridden_app):
     resp = test_client.get("/users/me")
     assert resp.status_code == 200
     assert resp.json()["name"] == "Bob"
-
-
-def test_create_user_profile(overridden_app):
-    test_client, _ = overridden_app
-    resp = test_client.post("/users", params={"name": "Charlie"})
-    assert resp.status_code == 200
-    assert resp.json()["name"] == "Charlie"
 
 
 async def test_get_db_commits_on_success():

@@ -15,11 +15,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("")
 async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> list[dict[str, str]]:
     """Docs."""
-    user_id = uuid.UUID(user["sub"])
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User))
     users = result.scalars().all()
     return [{"id": str(u.id), "name": u.name} for u in users]
 
@@ -35,17 +33,4 @@ async def get_my_profile(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "Profile not found")
-    return {"id": str(user.id), "name": user.name}
-
-
-@router.post("")
-async def create_user_profile(
-    name: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    auth: Annotated[dict[str, Any], Depends(get_current_user)],
-) -> dict[str, str]:
-    """Docs."""
-    user = User(id=uuid.UUID(auth["sub"]), name=name)
-    db.add(user)
-    await db.flush()
     return {"id": str(user.id), "name": user.name}
