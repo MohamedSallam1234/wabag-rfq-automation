@@ -1,3 +1,5 @@
+"""ORM model for the ``users`` table mirrored from Supabase auth."""
+
 import uuid
 from datetime import datetime
 
@@ -9,7 +11,7 @@ from app.core.database import Base
 
 
 class User(Base):
-    """docs."""
+    """Application user record keyed by the Supabase auth user id."""
 
     __tablename__ = "users"
 

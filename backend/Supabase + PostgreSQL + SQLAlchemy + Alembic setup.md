@@ -390,7 +390,8 @@ These are deliberate omissions for the current stage:
   - More than one person works on the repo, OR
   - We have real users in prod, OR
   - We catch ourselves running migrations from the wrong terminal.
-- **Tests.** No test suite yet. Add `pytest` + `pytest-asyncio` with a transactional fixture before the codebase grows much further.
+- **Tests.** Basic `pytest` + `pytest-asyncio` suite added for the users endpoints. Extend coverage as new features are added;
+  aim for a transactional fixture to avoid hitting the real DB in unit tests.
 - **Observability.** No Sentry, no logging aggregation. Add Sentry before launch.
 - **Rate limiting, CORS hardening, security headers.** Add when we have a frontend in prod.
 - **Backups beyond Supabase's defaults.** Free tier gets 7 days of daily backups. Upgrade or add custom backups when data matters more.

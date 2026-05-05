@@ -1,3 +1,5 @@
+"""Security primitives: Supabase JWT verification via JWKS."""
+
 from typing import Annotated, Any
 
 import jwt
@@ -22,7 +24,17 @@ _jwks_client = PyJWKClient(
 def get_current_user(
     creds: Annotated[HTTPAuthorizationCredentials, Depends(bearer)],
 ) -> dict[str, Any]:
-    """Docs."""
+    """Resolve the current authenticated user from a Supabase JWT.
+
+    Args:
+        creds: Bearer credentials extracted from the ``Authorization`` header.
+
+    Returns:
+        The decoded JWT payload (claims).
+
+    Raises:
+        HTTPException: 401 if the token is missing, expired, or otherwise invalid.
+    """
     token = creds.credentials
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(token).key

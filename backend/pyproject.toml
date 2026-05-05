@@ -62,9 +62,6 @@ dependencies = [
     # Tools for generating RFQ output documents
     "reportlab>=4.2", # PDF generation from templates
     "jinja2>=3.1", # Template engine for document generation
-    "pyrefly>=0.63.0",
-    "pyright>=1.1.409",
-    "ty>=0.0.33",
     "pydantic>=2.12.5",
     "pyjwt[crypto]>=2.11.0",
 ]
@@ -79,6 +76,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     # === Testing ===
+    "pyrefly>=0.63.0",
+    "pyright>=1.1.409",
+    "ty>=0.0.33",
     "pytest>=8.3", # Main testing framework
     "pytest-asyncio>=0.25", # Async test support (for FastAPI endpoints)
     "pytest-cov>=6.1", # Coverage reporting
@@ -96,7 +96,6 @@ dev = [
     # Complementary to Codex's semantic audit (local, not CI-enforced).
     "bandit[toml]>=1.7", # Python security linter (AST-based)
     "detect-secrets>=1.5", # Secret scanning with baseline
-    "httpx>=0.28.1",
 ]
 
 # -----------------------------------------------------------------------------

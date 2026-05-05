@@ -1,3 +1,5 @@
+"""User-facing routes (listing and current-user profile)."""
+
 import uuid
 from typing import Annotated, Any
 
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[dict[str, str]]:
-    """Docs."""
+    """Return every user in the database as ``{id, name}`` records."""
     result = await db.execute(select(User))
     users = result.scalars().all()
     return [{"id": str(u.id), "name": u.name} for u in users]
@@ -27,8 +29,18 @@ async def get_my_profile(
     db: Annotated[AsyncSession, Depends(get_db)],
     auth: Annotated[dict[str, Any], Depends(get_current_user)],
 ) -> dict[str, str]:
-    """Docs."""
-    user_id = uuid.UUID(auth["sub"])
+    """Return the profile of the caller identified by their Supabase JWT.
+
+    Raises:
+        HTTPException: 401 if the token has no/invalid ``sub`` claim, 404 if no profile exists.
+    """
+    sub = auth.get("sub")
+    if not sub:
+        raise HTTPException(401, "Missing subject claim in token")
+    try:
+        user_id = uuid.UUID(sub)
+    except ValueError as e:
+        raise HTTPException(401, "Invalid subject claim format") from e
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
