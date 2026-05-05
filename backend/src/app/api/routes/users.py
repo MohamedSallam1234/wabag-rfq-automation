@@ -14,17 +14,13 @@ from app.models.user import User
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("")
-async def list_users(
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[dict[str, str]]:
-    """Return every user in the database as ``{id, name}`` records."""
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    return [{"id": str(u.id), "name": u.name} for u in users]
-
-
-@router.get("/me")
+@router.get(
+    "/me",
+    responses={
+        401: {"description": "Missing or invalid subject claim in token"},
+        404: {"description": "User profile not found"},
+    },
+)
 async def get_my_profile(
     db: Annotated[AsyncSession, Depends(get_db)],
     auth: Annotated[dict[str, Any], Depends(get_current_user)],

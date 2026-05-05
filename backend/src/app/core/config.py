@@ -1,5 +1,6 @@
 """Application settings loaded from environment variables."""
 
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str = ""  # Legacy — kept for reference; auth uses JWKS, not this secret
 
     model_config = SettingsConfigDict(
-        env_file=f".env.{__import__('os').getenv('APP_ENV', 'local')}",
+        env_file=f".env.{os.getenv('APP_ENV', 'local')}",
         case_sensitive=True,
         extra="ignore",
     )

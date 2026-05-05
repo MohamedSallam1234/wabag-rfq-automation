@@ -39,23 +39,6 @@ def overridden_app() -> Iterator[tuple[TestClient, AsyncMock]]:
         app.dependency_overrides.clear()
 
 
-def test_list_users_returns_array(overridden_app):
-    test_client, db_mock = overridden_app
-    user_obj = MagicMock()
-    user_obj.id = uuid4()
-    user_obj.name = "Alice"
-    scalars_mock = MagicMock()
-    scalars_mock.all.return_value = [user_obj]
-    result_mock = MagicMock()
-    result_mock.scalars.return_value = scalars_mock
-    db_mock.execute = AsyncMock(return_value=result_mock)
-
-    resp = test_client.get("/users")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body[0]["name"] == "Alice"
-
-
 def test_get_my_profile_404_when_missing(overridden_app):
     test_client, db_mock = overridden_app
     result_mock = MagicMock()

@@ -13,6 +13,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+
 def do_run_migrations(connection):
     context.configure(
         connection=connection,
@@ -23,13 +24,16 @@ def do_run_migrations(connection):
     with context.begin_transaction():
         context.run_migrations()
 
+
 async def run_async_migrations():
     connectable = create_async_engine(settings.MIGRATION_DATABASE_URL)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
 
+
 def run_migrations_online():
     asyncio.run(run_async_migrations())
+
 
 run_migrations_online()
