@@ -1,20 +1,23 @@
-"""Main application entry point."""
+from fastapi import Depends, FastAPI
 
-from fastapi import FastAPI
-
-from app.api.routes import users
-
-app = FastAPI(title="WABAG RFQ Automation API", version="0.1.0")
-app.include_router(users.router)
+from app.core.config import Settings, get_settings
 
 
-@app.get("/")
-def read_root() -> dict[str, str]:
-    """Root endpoint."""
-    return {"status": "ok", "message": "Welcome to the WABAG RFQ Automation API"}
+def create_app() -> FastAPI:
+    """Create the FastAPI app factory pattern."""
+    app = FastAPI(
+        title="LinkDrop",
+        description="A personal URL shortener with tags and analytics.",
+        version="0.1.0",
+        contact={"name": "Mohamed Sallam", "email": "Sallamm733@gmail.com"},
+        license_info={"name": "MIT"},
+    )
+
+    @app.get("/health", tags=["meta"])
+    def health(settings: Settings = Depends(get_settings)) -> dict[str, str]:  # noqa: B008
+        return {"status": "ok", "env": settings.APP_ENV}
+
+    return app
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "ok"}
+app = create_app()

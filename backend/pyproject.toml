@@ -224,17 +224,6 @@ plugins = [# Third-party plugins
     "sqlalchemy.ext.mypy.plugin", # SQLAlchemy ORM support
 ]
 
-# Ignore missing imports for libraries without type stubs
-[[tool.mypy.overrides]]
-module = [
-    "supabase.*",
-    "realtime.*",
-    "postgrest.*",
-    "storage3.*",
-    "gotrue.*",
-]
-ignore_missing_imports = true
-
 # -----------------------------------------------------------------------------
 # [BANDIT] - Python Security Linter Configuration
 # -----------------------------------------------------------------------------
