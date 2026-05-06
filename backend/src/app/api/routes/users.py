@@ -1,0 +1,44 @@
+"""User-facing routes (listing and current-user profile)."""
+
+import uuid
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_db
+from app.core.security import get_current_user
+from app.models.user import User
+
+router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get(
+    "/me",
+    responses={
+        401: {"description": "Missing or invalid subject claim in token"},
+        404: {"description": "User profile not found"},
+    },
+)
+async def get_my_profile(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    auth: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, str]:
+    """Return the profile of the caller identified by their Supabase JWT.
+
+    Raises:
+        HTTPException: 401 if the token has no/invalid ``sub`` claim, 404 if no profile exists.
+    """
+    sub = auth.get("sub")
+    if not sub:
+        raise HTTPException(401, "Missing subject claim in token")
+    try:
+        user_id = uuid.UUID(sub)
+    except ValueError as e:
+        raise HTTPException(401, "Invalid subject claim format") from e
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "Profile not found")
+    return {"id": str(user.id), "name": user.name}

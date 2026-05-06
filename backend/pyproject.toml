@@ -44,7 +44,6 @@ dependencies = [
     "fastapi[standard]>=0.115",
     "python-multipart>=0.0.18", # File upload handling for RFQ documents
     "pydantic-settings>=2.7", # Configuration management with env vars support
-
     # === Database Layer ===
     # Async PostgreSQL stack with Supabase integration
     "supabase>=2.13", # Supabase client (Auth, DB, Storage)
@@ -63,9 +62,8 @@ dependencies = [
     # Tools for generating RFQ output documents
     "reportlab>=4.2", # PDF generation from templates
     "jinja2>=3.1", # Template engine for document generation
-    "pyrefly>=0.63.0",
-    "pyright>=1.1.409",
-    "ty>=0.0.33",
+    "pydantic>=2.12.5",
+    "pyjwt[crypto]>=2.11.0",
 ]
 
 # -----------------------------------------------------------------------------
@@ -78,21 +76,21 @@ dependencies = [
 [dependency-groups]
 dev = [
     # === Testing ===
+    "pyrefly>=0.63.0",
+    "pyright>=1.1.409",
+    "ty>=0.0.33",
     "pytest>=8.3", # Main testing framework
     "pytest-asyncio>=0.25", # Async test support (for FastAPI endpoints)
     "pytest-cov>=6.1", # Coverage reporting
-
     # === Code Quality ===
     "ruff>=0.9", # Fast linter and formatter (replaces flake8, black, isort)
     "mypy>=1.14", # Static type checker
     "pre-commit>=4.1", # Git hooks for pre-commit checks
     "commitizen>=4.4", # Conventional commits and versioning
-
     # === Type Stubs ===
     # Required by mypy to check untyped third-party libraries
     "types-requests>=2.32", # Stubs for requests library
     "sqlalchemy[mypy]>=2.0", # Stubs for SQLAlchemy
-
     # === Static Security Scanning ===
     # Deterministic security checks, wired into pre-commit (plan §4.4).
     # Complementary to Codex's semantic audit (local, not CI-enforced).
