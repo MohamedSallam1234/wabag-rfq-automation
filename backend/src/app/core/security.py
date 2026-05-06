@@ -41,8 +41,8 @@ def get_current_user(
         return jwt.decode(
             token,
             signing_key,
-            algorithms=["ES256", "RS256"],
-            audience="authenticated",
+            algorithms=settings.JWT_ALGORITHMS,
+            audience=settings.JWT_AUDIENCE,
         )
     except jwt.InvalidTokenError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {e}") from e
