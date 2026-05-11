@@ -7,12 +7,12 @@ def test_settings_parses_comma_separated_lists() -> None:
     """Comma-separated env values should load without JSON list syntax."""
     settings = Settings(
         _env_file=None,
-        DATABASE_URL="postgresql+asyncpg://u:p@localhost/app",
-        MIGRATION_DATABASE_URL="postgresql://u:p@localhost/app",
+        DATABASE_URL="postgresql+asyncpg://user:password@localhost/app",  # pragma: allowlist secret
+        MIGRATION_DATABASE_URL="postgresql://user:pass@localhost/app",  # pragma: allowlist secret
         SUPABASE_URL="https://example.supabase.co",
         SUPABASE_ANON_KEY="anon",
         SUPABASE_SERVICE_ROLE_KEY="service",
-        OPENROUTER_API_KEY="a",
+        OPENROUTER_API_KEY="testing-api-key",  # pragma: allowlist secret
         CORS_ORIGINS="http://localhost:3000, http://localhost:5173,,",
         JWT_ALGORITHMS="ES256, RS256",
     )
@@ -25,12 +25,12 @@ def test_settings_parses_pipe_separated_system_rules() -> None:
     """SYSTEM_RULES env var should split on pipes (rules contain commas)."""
     settings = Settings(
         _env_file=None,
-        DATABASE_URL="postgresql+asyncpg://u:p@localhost/app",
-        MIGRATION_DATABASE_URL="postgresql://u:p@localhost/app",
+        DATABASE_URL="postgresql+asyncpg://user:password@localhost/app",  # pragma: allowlist secret
+        MIGRATION_DATABASE_URL="postgresql://user:pass@localhost/app",  # pragma: allowlist secret
         SUPABASE_URL="https://example.supabase.co",
         SUPABASE_ANON_KEY="anon",
         SUPABASE_SERVICE_ROLE_KEY="service",
-        OPENROUTER_API_KEY="a",
+        OPENROUTER_API_KEY="testing-api-key",  # pragma: allowlist secret
         SYSTEM_RULES="Rule one, with a comma.|Rule two.|  | Rule three.",
     )
 
@@ -45,12 +45,12 @@ def test_settings_uses_default_system_rules_when_unset() -> None:
     """If SYSTEM_RULES is not provided, the baked-in defaults are used."""
     settings = Settings(
         _env_file=None,
-        DATABASE_URL="postgresql+asyncpg://u:p@localhost/app",
-        MIGRATION_DATABASE_URL="postgresql://u:p@localhost/app",
+        DATABASE_URL="postgresql+asyncpg://user:password@localhost/app",  # pragma: allowlist secret
+        MIGRATION_DATABASE_URL="postgresql://user:pass@localhost/app",  # pragma: allowlist secret
         SUPABASE_URL="https://example.supabase.co",
         SUPABASE_ANON_KEY="anon",
         SUPABASE_SERVICE_ROLE_KEY="service",
-        OPENROUTER_API_KEY="a",
+        OPENROUTER_API_KEY="testing-api-key",  # pragma: allowlist secret
     )
 
     assert len(settings.SYSTEM_RULES) > 0
@@ -59,12 +59,16 @@ def test_settings_uses_default_system_rules_when_unset() -> None:
 
 def test_settings_cache_returns_singleton(monkeypatch) -> None:
     """Settings are cached per process until explicitly cleared by tests."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/app")
-    monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://u:p@localhost/app")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+asyncpg://u:p@lo/app"
+    )  # pragma: allowlist secret
+    monkeypatch.setenv(
+        "MIGRATION_DATABASE_URL", "postgresql://u:p@l/ap"
+    )  # pragma: allowlist secret
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "a")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "testing-api-key")  # pragma: allowlist secret
 
     get_settings.cache_clear()
     first = get_settings()

@@ -113,7 +113,10 @@ class ClaudeClient:
             raise LLMFatalError(f"{self._model} returned {status}: {response.text[:200]}")
 
         data = response.json()
-        return str(data["choices"][0]["message"]["content"])
+        try:
+            return str(data["choices"][0]["message"]["content"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMFatalError(f"{self._model} returned malformed response: {data}") from exc
 
 
 # ─────────────────────────────────────────────────────────────────────────────

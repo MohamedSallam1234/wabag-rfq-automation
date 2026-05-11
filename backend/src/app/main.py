@@ -4,9 +4,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 
-from app.agents.llm.router import LLMRouter, build_router
+from app.agents.llm.router import LLMFatalError, LLMRouter, LLMTransientError, build_router
 from app.api.deps import get_router
 from app.core.config import Settings, get_settings
 
@@ -42,7 +42,15 @@ def create_app() -> FastAPI:
         llm: LLMRouter = Depends(get_router),  # noqa: B008
     ) -> dict[str, str]:
         """Smoke-test the LLM router: round-trip a single user message."""
-        return {"response": await llm.ask(user_message=msg)}
+        try:
+            response = await llm.ask(user_message=msg)
+            return {"response": response}
+        except LLMTransientError as exc:
+            raise HTTPException(
+                status_code=503, detail=f"LLM temporarily unavailable: {exc}"
+            ) from exc
+        except LLMFatalError as exc:
+            raise HTTPException(status_code=400, detail=f"LLM request failed: {exc}") from exc
 
     return app
 

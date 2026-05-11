@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # LLM (OpenRouter — Claude Opus 4.7 primary, Sonnet 4.6 fallback)
-    OPENROUTER_API_KEY: SecretStr = Field(..., repr=False)
+    OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
     PRIMARY_MODEL: str = "anthropic/claude-opus-4.7"
     FALLBACK_MODEL: str = "anthropic/claude-sonnet-4.6"
     LLM_TIMEOUT_S: float = 60.0
