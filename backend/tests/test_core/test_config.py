@@ -12,7 +12,7 @@ def test_settings_parses_comma_separated_lists() -> None:
         SUPABASE_URL="https://example.supabase.co",
         SUPABASE_ANON_KEY="anon",
         SUPABASE_SERVICE_ROLE_KEY="service",
-        OPENROUTER_API_KEY="",
+        OPENROUTER_API_KEY="a",
         CORS_ORIGINS="http://localhost:3000, http://localhost:5173,,",
         JWT_ALGORITHMS="ES256, RS256",
     )
@@ -30,7 +30,7 @@ def test_settings_parses_pipe_separated_system_rules() -> None:
         SUPABASE_URL="https://example.supabase.co",
         SUPABASE_ANON_KEY="anon",
         SUPABASE_SERVICE_ROLE_KEY="service",
-        OPENROUTER_API_KEY="",
+        OPENROUTER_API_KEY="a",
         SYSTEM_RULES="Rule one, with a comma.|Rule two.|  | Rule three.",
     )
 
@@ -50,7 +50,7 @@ def test_settings_uses_default_system_rules_when_unset() -> None:
         SUPABASE_URL="https://example.supabase.co",
         SUPABASE_ANON_KEY="anon",
         SUPABASE_SERVICE_ROLE_KEY="service",
-        OPENROUTER_API_KEY="",
+        OPENROUTER_API_KEY="a",
     )
 
     assert len(settings.SYSTEM_RULES) > 0
@@ -64,7 +64,7 @@ def test_settings_cache_returns_singleton(monkeypatch) -> None:
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "a")
 
     get_settings.cache_clear()
     first = get_settings()
