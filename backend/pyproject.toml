@@ -58,6 +58,7 @@ dependencies = [
     "pillow>=11.1", # Image processing (for scanned documents)
     # === External Services ===
     "httpx>=0.28", # Modern async HTTP client for LLM APIs
+    "openrouter>=0.9,<1.0", # Official OpenRouter Python SDK (beta — pinned to 0.x)
     # === Report Generation ===
     # Tools for generating RFQ output documents
     "reportlab>=4.2", # PDF generation from templates

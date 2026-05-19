@@ -1,14 +1,15 @@
-"""Tests for the F-04 LLM router (primary Opus, fallback Sonnet via OpenRouter)."""
+"""Tests for the F-04 LLM router (primary Opus, fallback Sonnet via OpenRouter SDK)."""
 
 from __future__ import annotations
 
-import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from openrouter import errors as openrouter_errors
 
 from app.agents.llm.router import (
-    OPENROUTER_URL,
     ClaudeClient,
     LLMFatalError,
     LLMRouter,
@@ -18,245 +19,183 @@ from app.agents.llm.router import (
 DEFAULT_TEST_RULES = ["Test rule 1: be brief.", "Test rule 2: never invent."]
 
 
-def _ok_response(text: str = "hello") -> httpx.Response:
-    """Return a 200 OpenRouter-shaped chat completion response."""
-    return httpx.Response(
-        200,
-        json={"choices": [{"message": {"content": text}}]},
+def _ok_result(text: str = "hello") -> SimpleNamespace:
+    """Return a ChatResult-shaped object exposing ``choices[0].message.content``."""
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+
+
+def _raw_response(status: int, body: str = "boom") -> httpx.Response:
+    """Build a minimal :class:`httpx.Response` for OpenRouterError dataclasses."""
+    return httpx.Response(status, text=body)
+
+
+def _http_error(status: int, body: str = "boom") -> openrouter_errors.OpenRouterError:
+    """Build an OpenRouterError with the given status (SDK uses the response's status)."""
+    return openrouter_errors.OpenRouterError(
+        message=f"HTTP {status}",
+        raw_response=_raw_response(status, body),
+        body=body,
     )
 
 
 def _make_client(
-    handler: httpx.MockTransport,
     *,
+    response_text: str = "hello",
+    side_effect: BaseException | None = None,
     model: str = "anthropic/claude-opus-4.7",
-    api_key: str = "test-key",
     rules: list[str] | None = None,
     timeout_s: float = 5.0,
-) -> tuple[ClaudeClient, httpx.AsyncClient]:
-    """Build a ClaudeClient backed by a MockTransport-driven AsyncClient."""
-    http = httpx.AsyncClient(transport=handler)
+) -> tuple[ClaudeClient, AsyncMock]:
+    """Build a ClaudeClient whose underlying SDK call is mocked with AsyncMock."""
+    fake_send = AsyncMock()
+    if side_effect is not None:
+        fake_send.side_effect = side_effect
+    else:
+        fake_send.return_value = _ok_result(response_text)
+    fake_open_router = MagicMock()
+    fake_open_router.chat.send_async = fake_send
     client = ClaudeClient(
-        http_client=http,
-        api_key=api_key,
+        open_router=fake_open_router,
         model=model,
         rules=rules if rules is not None else DEFAULT_TEST_RULES,
         timeout_s=timeout_s,
     )
-    return client, http
+    return client, fake_send
 
 
 # ─────────────────────────── Section A: payload + auth ───────────────────────
 
 
-async def test_request_body_carries_system_prompt_and_metadata() -> None:
-    captured: dict[str, object] = {}
+async def test_request_carries_system_prompt() -> None:
+    client, fake_send = _make_client(rules=["My one rule."])
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["headers"] = dict(request.headers)
-        captured["body"] = json.loads(request.content)
-        return _ok_response()
-
-    client, http = _make_client(
-        httpx.MockTransport(handler),
-        rules=["My one rule."],
+    await client.ask(
+        user_message="hi",
+        task_instructions="extract fields",
+        rfq_id="RFQ-42",
     )
-    try:
-        await client.ask(
-            user_message="hi",
-            task_instructions="extract fields",
-            rfq_id="RFQ-42",
-        )
-    finally:
-        await http.aclose()
 
-    body = captured["body"]
-    assert isinstance(body, dict)
-    messages = body["messages"]
+    kwargs = fake_send.call_args.kwargs
+    assert kwargs["model"] == "anthropic/claude-opus-4.7"
+    messages = kwargs["messages"]
     assert messages[0]["role"] == "system"
     assert "F-04 AI Operating Rules" in messages[0]["content"]
     assert "My one rule." in messages[0]["content"]
     assert "extract fields" in messages[0]["content"]
     assert messages[1] == {"role": "user", "content": "hi"}
-
-    metadata = body["metadata"]
-    assert metadata == {"ruleset": "F-04", "rfq_id": "RFQ-42"}
-
-    headers = captured["headers"]
-    assert isinstance(headers, dict)
-    assert headers["authorization"] == "Bearer test-key"
+    assert kwargs["timeout_ms"] == 5000
 
 
-async def test_request_targets_openrouter_url() -> None:
-    seen: dict[str, str] = {}
+async def test_returns_assistant_text() -> None:
+    client, _ = _make_client(response_text="hello from the model")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        return _ok_response()
+    result = await client.ask("hi")
 
-    client, http = _make_client(httpx.MockTransport(handler))
-    try:
-        await client.ask("hi")
-    finally:
-        await http.aclose()
-
-    assert seen["url"] == OPENROUTER_URL
+    assert result == "hello from the model"
 
 
-# ─────────────────────────── Section C: error mapping ────────────────────────
+# ─────────────────────────── Section B: error mapping ────────────────────────
 
 
 @pytest.mark.parametrize("status", [429, 500, 502, 503])
 async def test_transient_status_codes_raise_transient_error(status: int) -> None:
-    def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, text="boom")
+    client, _ = _make_client(side_effect=_http_error(status))
 
-    client, http = _make_client(httpx.MockTransport(handler))
-    try:
-        with pytest.raises(LLMTransientError):
-            await client.ask("hi")
-    finally:
-        await http.aclose()
+    with pytest.raises(LLMTransientError):
+        await client.ask("hi")
 
 
 @pytest.mark.parametrize("status", [400, 401, 404])
 async def test_fatal_status_codes_raise_fatal_error(status: int) -> None:
-    def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, text="bad")
+    client, _ = _make_client(side_effect=_http_error(status))
 
-    client, http = _make_client(httpx.MockTransport(handler))
-    try:
-        with pytest.raises(LLMFatalError):
-            await client.ask("hi")
-    finally:
-        await http.aclose()
+    with pytest.raises(LLMFatalError):
+        await client.ask("hi")
+
+
+async def test_no_response_error_is_transient() -> None:
+    client, _ = _make_client(side_effect=openrouter_errors.NoResponseError("network gone"))
+
+    with pytest.raises(LLMTransientError):
+        await client.ask("hi")
 
 
 async def test_timeout_raises_transient_error() -> None:
-    def handler(_: httpx.Request) -> httpx.Response:
-        raise httpx.TimeoutException("slow")
+    client, _ = _make_client(side_effect=httpx.TimeoutException("slow"))
 
-    client, http = _make_client(httpx.MockTransport(handler))
-    try:
-        with pytest.raises(LLMTransientError):
-            await client.ask("hi")
-    finally:
-        await http.aclose()
+    with pytest.raises(LLMTransientError):
+        await client.ask("hi")
 
 
-# ─────────────────────────── Section D: router behavior ──────────────────────
+async def test_transport_error_raises_transient_error() -> None:
+    client, _ = _make_client(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(LLMTransientError):
+        await client.ask("hi")
 
 
-def _router_with_handlers(
-    primary_handler: httpx.MockTransport,
-    fallback_handler: httpx.MockTransport,
-) -> tuple[LLMRouter, httpx.AsyncClient, httpx.AsyncClient]:
-    primary, primary_http = _make_client(primary_handler, model="primary")
-    fallback, fallback_http = _make_client(fallback_handler, model="fallback")
-    return LLMRouter(primary=primary, fallback=fallback), primary_http, fallback_http
+async def test_malformed_response_raises_fatal_error() -> None:
+    client, fake_send = _make_client()
+    fake_send.return_value = SimpleNamespace(choices=[])
+
+    with pytest.raises(LLMFatalError):
+        await client.ask("hi")
+
+
+async def test_none_content_raises_fatal_error() -> None:
+    client, fake_send = _make_client()
+    fake_send.return_value = _ok_result(text=None)  # type: ignore[arg-type]
+
+    with pytest.raises(LLMFatalError):
+        await client.ask("hi")
+
+
+# ─────────────────────────── Section C: router behavior ──────────────────────
+
+
+def _router(
+    primary_client: ClaudeClient,
+    fallback_client: ClaudeClient,
+) -> LLMRouter:
+    return LLMRouter(primary=primary_client, fallback=fallback_client)
 
 
 async def test_router_returns_primary_when_primary_succeeds() -> None:
-    primary_calls = 0
-    fallback_calls = 0
+    primary, primary_send = _make_client(response_text="from-primary", model="primary")
+    fallback, fallback_send = _make_client(response_text="from-fallback", model="fallback")
 
-    def primary_handler(_: httpx.Request) -> httpx.Response:
-        nonlocal primary_calls
-        primary_calls += 1
-        return _ok_response("from-primary")
-
-    def fallback_handler(_: httpx.Request) -> httpx.Response:
-        nonlocal fallback_calls
-        fallback_calls += 1
-        return _ok_response("from-fallback")
-
-    router, p_http, f_http = _router_with_handlers(
-        httpx.MockTransport(primary_handler),
-        httpx.MockTransport(fallback_handler),
-    )
-    try:
-        result = await router.ask("hi")
-    finally:
-        await p_http.aclose()
-        await f_http.aclose()
+    result = await _router(primary, fallback).ask("hi")
 
     assert result == "from-primary"
-    assert primary_calls == 1
-    assert fallback_calls == 0
+    assert primary_send.await_count == 1
+    assert fallback_send.await_count == 0
 
 
 async def test_router_falls_back_on_transient_error() -> None:
-    primary_calls = 0
-    fallback_calls = 0
+    primary, primary_send = _make_client(side_effect=_http_error(503), model="primary")
+    fallback, fallback_send = _make_client(response_text="from-fallback", model="fallback")
 
-    def primary_handler(_: httpx.Request) -> httpx.Response:
-        nonlocal primary_calls
-        primary_calls += 1
-        return httpx.Response(503, text="overloaded")
-
-    def fallback_handler(_: httpx.Request) -> httpx.Response:
-        nonlocal fallback_calls
-        fallback_calls += 1
-        return _ok_response("from-fallback")
-
-    router, p_http, f_http = _router_with_handlers(
-        httpx.MockTransport(primary_handler),
-        httpx.MockTransport(fallback_handler),
-    )
-    try:
-        result = await router.ask("hi")
-    finally:
-        await p_http.aclose()
-        await f_http.aclose()
+    result = await _router(primary, fallback).ask("hi")
 
     assert result == "from-fallback"
-    assert primary_calls == 1
-    assert fallback_calls == 1
+    assert primary_send.await_count == 1
+    assert fallback_send.await_count == 1
 
 
 async def test_router_does_not_fall_back_on_fatal_error() -> None:
-    primary_calls = 0
-    fallback_calls = 0
+    primary, primary_send = _make_client(side_effect=_http_error(400), model="primary")
+    fallback, fallback_send = _make_client(response_text="should-not-be-used", model="fallback")
 
-    def primary_handler(_: httpx.Request) -> httpx.Response:
-        nonlocal primary_calls
-        primary_calls += 1
-        return httpx.Response(400, text="bad request")
+    with pytest.raises(LLMFatalError):
+        await _router(primary, fallback).ask("hi")
 
-    def fallback_handler(_: httpx.Request) -> httpx.Response:
-        nonlocal fallback_calls
-        fallback_calls += 1
-        return _ok_response("should-not-be-used")
-
-    router, p_http, f_http = _router_with_handlers(
-        httpx.MockTransport(primary_handler),
-        httpx.MockTransport(fallback_handler),
-    )
-    try:
-        with pytest.raises(LLMFatalError):
-            await router.ask("hi")
-    finally:
-        await p_http.aclose()
-        await f_http.aclose()
-
-    assert primary_calls == 1
-    assert fallback_calls == 0
+    assert primary_send.await_count == 1
+    assert fallback_send.await_count == 0
 
 
 async def test_router_raises_when_both_primary_and_fallback_fail_transiently() -> None:
-    def primary_handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(503)
+    primary, _ = _make_client(side_effect=_http_error(503), model="primary")
+    fallback, _ = _make_client(side_effect=_http_error(502), model="fallback")
 
-    def fallback_handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(502)
-
-    router, p_http, f_http = _router_with_handlers(
-        httpx.MockTransport(primary_handler),
-        httpx.MockTransport(fallback_handler),
-    )
-    try:
-        with pytest.raises(LLMTransientError):
-            await router.ask("hi")
-    finally:
-        await p_http.aclose()
-        await f_http.aclose()
+    with pytest.raises(LLMTransientError):
+        await _router(primary, fallback).ask("hi")
