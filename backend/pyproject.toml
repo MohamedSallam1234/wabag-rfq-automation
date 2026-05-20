@@ -175,6 +175,8 @@ ignore = [
     "D", # Don't require docstrings in tests
     "ANN", # Don't require type annotations in tests
     "S101", # Allow assert in tests
+    "S105", # Fake tokens/secrets are fine in test fixtures
+    "S106",
     "ARG", # Unused fixtures are normal in pytest
     "PLR2004", # Magic values are fine in tests (assert x == 42)
 ]
@@ -186,6 +188,11 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"               # Use Google-style docstrings
+
+[tool.ruff.lint.pylint]
+# FastAPI route handlers commonly inject several dependencies (db, storage,
+# settings, current user) alongside path/body params.
+max-args = 8
 
 # --- Formatter Settings ---
 [tool.ruff.format]
@@ -224,6 +231,11 @@ plugins = [# Third-party plugins
     "pydantic.mypy", # Pydantic model support
     "sqlalchemy.ext.mypy.plugin", # SQLAlchemy ORM support
 ]
+
+# openpyxl ships no type information (no py.typed); ignore its missing stubs.
+[[tool.mypy.overrides]]
+module = ["openpyxl.*"]
+ignore_missing_imports = true
 
 # -----------------------------------------------------------------------------
 # [BANDIT] - Python Security Linter Configuration

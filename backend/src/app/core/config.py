@@ -65,6 +65,21 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # Document storage / upload (Supabase Storage)
+    SUPABASE_STORAGE_BUCKET: str = "rfq-documents"
+    MAX_UPLOAD_SIZE_MB: int = 100
+    MAX_FILES_PER_PROJECT: int = 50
+    MAX_PROJECT_TOTAL_SIZE_MB: int = 1000
+    SIGNED_UPLOAD_URL_TTL_S: int = 300
+    SIGNED_DOWNLOAD_URL_TTL_S: int = 600
+    DOWNLOAD_CHUNK_SIZE: int = 1024 * 1024
+    STORAGE_CLIENT_TIMEOUT_S: int = 120
+    PENDING_UPLOAD_TTL_MIN: int = 60
+    COMPUTE_SHA256: bool = True
+    ALLOWED_UPLOAD_EXTENSIONS: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [".pdf", ".docx", ".xlsx", ".xls"],
+    )
+
     # LLM (OpenRouter — Claude Opus 4.7 primary, Sonnet 4.6 fallback)
     OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
     PRIMARY_MODEL: str = "anthropic/claude-opus-4.7"
@@ -89,6 +104,19 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("ALLOWED_UPLOAD_EXTENSIONS", mode="before")
+    @classmethod
+    def _split_allowed_extensions(cls, value: str | list[str]) -> list[str]:
+        """Parse a comma-separated env value into normalized lowercase, dotted extensions."""
+        items = value.split(",") if isinstance(value, str) else value
+        normalized: list[str] = []
+        for item in items:
+            ext = item.strip().lower()
+            if not ext:
+                continue
+            normalized.append(ext if ext.startswith(".") else f".{ext}")
+        return normalized
 
     @field_validator("JWT_ALGORITHMS", mode="before")
     @classmethod
