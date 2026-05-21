@@ -10,8 +10,8 @@ def test_settings_parses_comma_separated_lists() -> None:
         DATABASE_URL="postgresql+asyncpg://user:password@localhost/app",  # pragma: allowlist secret
         MIGRATION_DATABASE_URL="postgresql://user:pass@localhost/app",  # pragma: allowlist secret
         SUPABASE_URL="https://example.supabase.co",
-        SUPABASE_ANON_KEY="anon",
-        SUPABASE_SERVICE_ROLE_KEY="service",
+        SUPABASE_PUBLISHABLE_KEY="anon",
+        SUPABASE_SECRET_KEY="service",  # pragma: allowlist secret
         OPENROUTER_API_KEY="testing-api-key",  # pragma: allowlist secret
         CORS_ORIGINS="http://localhost:3000, http://localhost:5173,,",
         JWT_ALGORITHMS="ES256, RS256",
@@ -28,8 +28,8 @@ def test_settings_parses_pipe_separated_system_rules() -> None:
         DATABASE_URL="postgresql+asyncpg://user:password@localhost/app",  # pragma: allowlist secret
         MIGRATION_DATABASE_URL="postgresql://user:pass@localhost/app",  # pragma: allowlist secret
         SUPABASE_URL="https://example.supabase.co",
-        SUPABASE_ANON_KEY="anon",
-        SUPABASE_SERVICE_ROLE_KEY="service",
+        SUPABASE_PUBLISHABLE_KEY="anon",
+        SUPABASE_SECRET_KEY="service",  # pragma: allowlist secret
         OPENROUTER_API_KEY="testing-api-key",  # pragma: allowlist secret
         SYSTEM_RULES="Rule one, with a comma.|Rule two.|  | Rule three.",
     )
@@ -48,8 +48,8 @@ def test_settings_uses_default_system_rules_when_unset() -> None:
         DATABASE_URL="postgresql+asyncpg://user:password@localhost/app",  # pragma: allowlist secret
         MIGRATION_DATABASE_URL="postgresql://user:pass@localhost/app",  # pragma: allowlist secret
         SUPABASE_URL="https://example.supabase.co",
-        SUPABASE_ANON_KEY="anon",
-        SUPABASE_SERVICE_ROLE_KEY="service",
+        SUPABASE_PUBLISHABLE_KEY="anon",
+        SUPABASE_SECRET_KEY="service",  # pragma: allowlist secret
         OPENROUTER_API_KEY="testing-api-key",  # pragma: allowlist secret
     )
 
@@ -66,8 +66,8 @@ def test_settings_cache_returns_singleton(monkeypatch) -> None:
         "MIGRATION_DATABASE_URL", "postgresql://u:p@l/ap"
     )  # pragma: allowlist secret
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon")
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "anon")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "service")  # pragma: allowlist secret
     monkeypatch.setenv("OPENROUTER_API_KEY", "testing-api-key")  # pragma: allowlist secret
 
     get_settings.cache_clear()

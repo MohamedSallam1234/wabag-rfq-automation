@@ -343,15 +343,40 @@ async def test_download_object_to_tempfile_cleans_up_on_error() -> None:
     assert not os.path.exists(captured[0])  # and cleaned up on failure
 
 
-async def test_validate_stored_object_download_error() -> None:
+async def test_validate_stored_object_download_error_is_transient() -> None:
     storage, _ = _storage_with_proxy()
     response = _FakeResponse(b"", raise_error=True)
-    with patch.object(upload.httpx, "AsyncClient", lambda *a, **k: _FakeHttpClient(response)):
+    with (
+        patch.object(upload.httpx, "AsyncClient", lambda *a, **k: _FakeHttpClient(response)),
+        patch.object(upload.anyio, "sleep", AsyncMock()),
+    ):
         outcome = await upload.validate_stored_object(
             storage, bucket="b", storage_path="p", ext=".pdf", settings=SETTINGS
         )
     assert outcome.ok is False
+    assert outcome.transient is True  # a download blip must NOT permanently fail the doc
     assert "download" in (outcome.failure_reason or "")
+
+
+async def test_download_with_retries_succeeds_after_transient_blip() -> None:
+    storage, _ = _storage_with_proxy()
+    payload = _pdf_bytes(pages=1)
+    responses = [_FakeResponse(b"", raise_error=True), _FakeResponse(payload)]
+
+    def _client(*_a: object, **_k: object) -> _FakeHttpClient:
+        return _FakeHttpClient(responses.pop(0))
+
+    with (
+        patch.object(upload.httpx, "AsyncClient", _client),
+        patch.object(upload.anyio, "sleep", AsyncMock()),
+    ):
+        downloaded = await upload._download_with_retries(
+            storage, bucket="b", storage_path="p", ext=".pdf", settings=SETTINGS
+        )
+    try:
+        assert downloaded.size_bytes == len(payload)
+    finally:
+        os.unlink(downloaded.path)
 
 
 # --------------------------------------------------------------------------- #
@@ -412,7 +437,8 @@ async def test_run_document_validation_skips_missing_document() -> None:
     session.commit.assert_not_awaited()
 
 
-async def test_run_document_validation_handles_storage_exception() -> None:
+async def test_run_document_validation_storage_exception_is_transient() -> None:
+    """A storage-layer error is retryable: leave the doc processing, keep its bytes."""
     document = _make_document(status=DocumentStatus.PROCESSING)
     session = MagicMock()
     session.get = AsyncMock(return_value=document)
@@ -425,8 +451,35 @@ async def test_run_document_validation_handles_storage_exception() -> None:
         ),
     ):
         await upload.run_document_validation(storage, document.id)
-    assert document.status == DocumentStatus.FAILED
-    proxy.remove.assert_awaited_once()
+    assert document.status == DocumentStatus.PROCESSING
+    proxy.remove.assert_not_awaited()
+    session.commit.assert_not_awaited()
+
+
+async def test_run_document_validation_transient_leaves_processing() -> None:
+    """A transient validation outcome must not fail the doc or delete the object."""
+    document = _make_document(status=DocumentStatus.PROCESSING)
+    session = MagicMock()
+    session.get = AsyncMock(return_value=document)
+    session.commit = AsyncMock()
+    storage, proxy = _storage_with_proxy()
+    outcome = ValidationOutcome(
+        ok=False,
+        transient=True,
+        failure_reason="blip",
+        page_count=None,
+        sheet_names=None,
+        sha256=None,
+        size_bytes=None,
+    )
+    with (
+        patch.object(upload, "AsyncSessionLocal", lambda: _FakeSessionCtx(session)),
+        patch.object(upload, "validate_stored_object", AsyncMock(return_value=outcome)),
+    ):
+        await upload.run_document_validation(storage, document.id)
+    assert document.status == DocumentStatus.PROCESSING
+    proxy.remove.assert_not_awaited()
+    session.commit.assert_not_awaited()
 
 
 def _purge_session(documents: list[Document]) -> MagicMock:
@@ -476,3 +529,61 @@ async def test_purge_never_raises_on_db_error() -> None:
         await upload.purge_stale_pending_documents(
             storage, project_id=uuid.uuid4(), settings=SETTINGS
         )
+
+
+# --------------------------------------------------------------------------- #
+# Stuck-processing recovery
+# --------------------------------------------------------------------------- #
+def _ids_session(doc_ids: list[uuid.UUID]) -> MagicMock:
+    session = MagicMock()
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = doc_ids
+    session.execute = AsyncMock(return_value=result)
+    return session
+
+
+async def test_recover_stuck_processing_redrives_each_document() -> None:
+    doc_ids = [uuid.uuid4(), uuid.uuid4()]
+    session = _ids_session(doc_ids)
+    storage, _ = _storage_with_proxy()
+    redrive = AsyncMock()
+    with (
+        patch.object(upload, "AsyncSessionLocal", lambda: _FakeSessionCtx(session)),
+        patch.object(upload, "run_document_validation", redrive),
+    ):
+        await upload.recover_stuck_processing_documents(storage, settings=SETTINGS)
+    assert redrive.await_count == 2
+
+
+async def test_recover_stuck_processing_noop_when_none() -> None:
+    session = _ids_session([])
+    storage, _ = _storage_with_proxy()
+    redrive = AsyncMock()
+    with (
+        patch.object(upload, "AsyncSessionLocal", lambda: _FakeSessionCtx(session)),
+        patch.object(upload, "run_document_validation", redrive),
+    ):
+        await upload.recover_stuck_processing_documents(storage, settings=SETTINGS)
+    redrive.assert_not_awaited()
+
+
+async def test_recover_stuck_processing_swallows_query_error() -> None:
+    session = MagicMock()
+    session.execute = AsyncMock(side_effect=RuntimeError("db down"))
+    storage, _ = _storage_with_proxy()
+    with patch.object(upload, "AsyncSessionLocal", lambda: _FakeSessionCtx(session)):
+        # Must not raise — recovery can never block startup.
+        await upload.recover_stuck_processing_documents(storage, settings=SETTINGS)
+
+
+async def test_recover_stuck_processing_continues_past_failures() -> None:
+    doc_ids = [uuid.uuid4(), uuid.uuid4()]
+    session = _ids_session(doc_ids)
+    storage, _ = _storage_with_proxy()
+    redrive = AsyncMock(side_effect=[RuntimeError("boom"), None])
+    with (
+        patch.object(upload, "AsyncSessionLocal", lambda: _FakeSessionCtx(session)),
+        patch.object(upload, "run_document_validation", redrive),
+    ):
+        await upload.recover_stuck_processing_documents(storage, settings=SETTINGS)
+    assert redrive.await_count == 2  # the first failing does not stop the second

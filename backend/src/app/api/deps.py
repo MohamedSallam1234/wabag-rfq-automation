@@ -47,14 +47,21 @@ def current_user_id(user: dict[str, Any]) -> uuid.UUID:
 
 
 async def load_owned_project(
-    db: AsyncSession, project_id: uuid.UUID, owner_id: uuid.UUID
+    db: AsyncSession, project_id: uuid.UUID, owner_id: uuid.UUID, *, for_update: bool = False
 ) -> Project:
     """Load a project owned by ``owner_id`` or raise 404 (also hides others' projects).
+
+    Args:
+        db: The active async database session.
+        project_id: The project to load.
+        owner_id: The current user; the project must belong to them.
+        for_update: When ``True``, lock the project row (``SELECT … FOR UPDATE``) so
+            concurrent uploads to the same project serialize their quota checks.
 
     Raises:
         HTTPException: 404 if the project is absent or owned by another user.
     """
-    project = await db.get(Project, project_id)
+    project = await db.get(Project, project_id, with_for_update=for_update or None)
     if project is None or project.owner_id != owner_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
     return project

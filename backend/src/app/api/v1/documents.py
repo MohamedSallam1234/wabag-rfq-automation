@@ -1,6 +1,7 @@
 """Upload (signed direct-to-storage), classify, and manage documents (owner-scoped)."""
 
 import contextlib
+import logging
 import uuid
 from collections.abc import Sequence
 from typing import Annotated, Any
@@ -40,6 +41,8 @@ from app.services.ingestion.upload import (
     validate_upload_request,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
 CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
@@ -69,7 +72,8 @@ async def init_document_upload(
     Supabase Storage using the returned URL/token, then calls ``finalize``.
     """
     owner_id = current_user_id(user)
-    project = await load_owned_project(db, project_id, owner_id)
+    # Lock the project row so concurrent uploads serialize their quota checks below.
+    project = await load_owned_project(db, project_id, owner_id, for_update=True)
 
     # Opportunistically clean up abandoned pending uploads (own txn; never blocks).
     await purge_stale_pending_documents(storage, project_id=project.id, settings=settings)
@@ -114,9 +118,8 @@ async def init_document_upload(
     try:
         signed = await storage.from_(bucket).create_signed_upload_url(storage_path)
     except StorageException as exc:
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"Could not create upload URL: {exc}"
-        ) from exc
+        logger.warning("failed to create signed upload URL for %s: %s", storage_path, exc)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not create upload URL") from exc
 
     await db.refresh(document)
     return DocumentInitResponse(

@@ -48,12 +48,15 @@ class Settings(BaseSettings):
 
     # Supabase auth/storage
     SUPABASE_URL: str
-    SUPABASE_ANON_KEY: str = Field(..., repr=False)
-    SUPABASE_SERVICE_ROLE_KEY: str = Field(..., repr=False)
-    SUPABASE_JWT_SECRET: str = Field(
+    SUPABASE_PUBLISHABLE_KEY: str = Field(
         default="",
         repr=False,
-        description="Legacy symmetric JWT secret; runtime auth verifies Supabase JWKS.",
+        description="New publishable key; client-safe, unused by backend.",
+    )
+    SUPABASE_SECRET_KEY: str = Field(
+        ...,
+        repr=False,
+        description="New secret key; server-side, bypasses RLS. Used by Storage client.",
     )
 
     # JWT verification
@@ -76,6 +79,11 @@ class Settings(BaseSettings):
     STORAGE_CLIENT_TIMEOUT_S: int = 120
     PENDING_UPLOAD_TTL_MIN: int = 60
     COMPUTE_SHA256: bool = True
+
+    # Background validation / recovery
+    VALIDATION_MAX_ATTEMPTS: int = 3
+    VALIDATION_RETRY_BACKOFF_S: float = 0.5
+    PROCESSING_RECOVERY_TTL_MIN: int = 15
     ALLOWED_UPLOAD_EXTENSIONS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [".pdf", ".docx", ".xlsx", ".xls"],
     )

@@ -35,10 +35,10 @@ uv sync
 
 # 2. Start local Supabase (Docker must be running)
 supabase start
-# Save the printed anon key, service_role key, and JWT secret
+# Save the printed publishable key and secret key (API keys page)
 
 # 3. Get .env.local from a teammate (or create from .env.example)
-#    Required: SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
+#    Required: SUPABASE_SECRET_KEY (SUPABASE_PUBLISHABLE_KEY is optional, unused by the backend)
 
 # 4. Run migrations against the local DB
 uv run alembic upgrade head
@@ -158,9 +158,9 @@ APP_ENV=local
 DATABASE_URL=postgresql+asyncpg://app_user:...@host:port/postgres
 MIGRATION_DATABASE_URL=postgresql+asyncpg://postgres:...@host:port/postgres
 SUPABASE_URL=http://127.0.0.1:54321        # or https://<ref>.supabase.co for prod
-SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...               # server-only, NEVER expose to frontend
-SUPABASE_JWT_SECRET=...                     # legacy; not used since we verify via JWKS
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_... # client-safe; optional, unused by the backend
+SUPABASE_SECRET_KEY=sb_secret_...           # server-only, NEVER expose to frontend
+# JWT signing keys are verified via JWKS (no shared secret needed)
 ```
 
 `.env.production` is **not committed**. Get it from a teammate via a password manager.

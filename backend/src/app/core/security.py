@@ -1,5 +1,6 @@
 """Security primitives: Supabase JWT verification via JWKS."""
 
+import logging
 from typing import Annotated, Any
 
 import jwt
@@ -8,6 +9,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 bearer = HTTPBearer()
 
@@ -45,4 +48,5 @@ def get_current_user(
             audience=settings.JWT_AUDIENCE,
         )
     except jwt.InvalidTokenError as e:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {e}") from e
+        logger.debug("JWT verification failed: %s", e)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token") from e

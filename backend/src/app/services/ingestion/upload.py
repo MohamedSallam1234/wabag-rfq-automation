@@ -57,7 +57,14 @@ class _ParseError(Exception):
 
 @dataclass(frozen=True)
 class ValidationOutcome:
-    """Result of validating a stored object during background processing."""
+    """Result of validating a stored object during background processing.
+
+    ``ok=False`` with ``transient=True`` marks a *retryable* infrastructure failure
+    (e.g. a storage download blip): the document is left ``processing`` and its bytes
+    are kept, to be retried by :func:`recover_stuck_processing_documents`. ``ok=False``
+    with ``transient=False`` is a *permanent* content failure (wrong type / unparseable)
+    that fails the document and removes the object.
+    """
 
     ok: bool
     failure_reason: str | None
@@ -65,6 +72,7 @@ class ValidationOutcome:
     sheet_names: list[str] | None
     sha256: str | None
     size_bytes: int | None
+    transient: bool = False
 
 
 @dataclass(frozen=True)
@@ -253,6 +261,42 @@ async def _deep_parse(tmp_path: str, ext: str) -> tuple[int | None, list[str] | 
     return None, None  # .xls: accepted as a stored blob (no parser available)
 
 
+async def _download_with_retries(
+    storage: AsyncStorageClient,
+    *,
+    bucket: str,
+    storage_path: str,
+    ext: str,
+    settings: Settings,
+) -> DownloadedObject:
+    """Download the object, retrying transient ``httpx`` errors with linear backoff.
+
+    Raises:
+        httpx.HTTPError: If every attempt fails (treated as a transient failure upstream).
+    """
+    attempts = max(1, settings.VALIDATION_MAX_ATTEMPTS)
+    last_exc: httpx.HTTPError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await download_object_to_tempfile(
+                storage, bucket=bucket, storage_path=storage_path, settings=settings, suffix=ext
+            )
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            if attempt < attempts:
+                logger.warning(
+                    "validation download attempt %d/%d failed for %s: %s",
+                    attempt,
+                    attempts,
+                    storage_path,
+                    exc,
+                )
+                await anyio.sleep(settings.VALIDATION_RETRY_BACKOFF_S * attempt)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("download retry loop did not execute")  # pragma: no cover
+
+
 async def validate_stored_object(
     storage: AsyncStorageClient,
     *,
@@ -264,15 +308,17 @@ async def validate_stored_object(
     """Download a stored object and validate its magic bytes and parseability.
 
     Streams the object to a temp file (RAM-bounded), checks the magic bytes against
-    the extension, then deep-parses it. The temp file is always removed.
+    the extension, then deep-parses it. The temp file is always removed. A download
+    failure is reported as ``transient`` (retryable) rather than a permanent failure.
     """
     try:
-        downloaded = await download_object_to_tempfile(
-            storage, bucket=bucket, storage_path=storage_path, settings=settings, suffix=ext
+        downloaded = await _download_with_retries(
+            storage, bucket=bucket, storage_path=storage_path, ext=ext, settings=settings
         )
     except httpx.HTTPError as exc:
         return ValidationOutcome(
             ok=False,
+            transient=True,
             failure_reason=f"Could not download object for validation: {exc}"[:255],
             page_count=None,
             sheet_names=None,
@@ -326,6 +372,7 @@ async def run_document_validation(storage: AsyncStorageClient, document_id: uuid
             document = await session.get(Document, document_id)
             if document is None or document.status != DocumentStatus.PROCESSING:
                 return
+            logger.info("validating document %s", document_id)
             ext = normalize_extension(document.original_filename)
             try:
                 outcome = await validate_stored_object(
@@ -336,8 +383,10 @@ async def run_document_validation(storage: AsyncStorageClient, document_id: uuid
                     settings=settings,
                 )
             except StorageException as exc:
+                # Storage-layer error (e.g. signed-URL creation) is transient: retry later.
                 outcome = ValidationOutcome(
                     ok=False,
+                    transient=True,
                     failure_reason=f"Storage error during validation: {exc}"[:255],
                     page_count=None,
                     sheet_names=None,
@@ -352,12 +401,23 @@ async def run_document_validation(storage: AsyncStorageClient, document_id: uuid
                 if outcome.size_bytes is not None:
                     document.size_bytes = outcome.size_bytes
                 document.failure_reason = None
+                await session.commit()
+                logger.info("document %s ready (pages=%s)", document_id, outcome.page_count)
+            elif outcome.transient:
+                # Retryable infra failure: leave the row `processing` and keep the bytes;
+                # `recover_stuck_processing_documents` will re-drive it later. No commit.
+                logger.warning(
+                    "transient validation failure for %s; left processing for retry: %s",
+                    document_id,
+                    outcome.failure_reason,
+                )
             else:
                 document.status = DocumentStatus.FAILED
                 document.failure_reason = outcome.failure_reason or "validation failed"
                 with contextlib.suppress(StorageException):
                     await storage.from_(document.storage_bucket).remove([document.storage_path])
-            await session.commit()
+                await session.commit()
+                logger.info("document %s failed: %s", document_id, document.failure_reason)
     except Exception:
         logger.exception("document validation failed unexpectedly for %s", document_id)
 
@@ -386,3 +446,34 @@ async def purge_stale_pending_documents(
             await session.commit()
     except Exception:
         logger.exception("failed to purge stale pending documents for project %s", project_id)
+
+
+async def recover_stuck_processing_documents(
+    storage: AsyncStorageClient, *, settings: Settings
+) -> None:
+    """Re-drive validation for documents stuck in ``processing`` past the recovery TTL.
+
+    Covers two cases that would otherwise orphan a document forever: a process that
+    crashed/restarted mid-validation, and a transient validation failure that was
+    deliberately left in ``processing`` for retry. Intended to run at startup; opens
+    its own session and swallows all errors so it can never block boot.
+    """
+    cutoff = datetime.now(UTC) - timedelta(minutes=settings.PROCESSING_RECOVERY_TTL_MIN)
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(Document.id).where(
+                Document.status == DocumentStatus.PROCESSING,
+                Document.updated_at < cutoff,
+            )
+            doc_ids = list((await session.execute(stmt)).scalars().all())
+    except Exception:
+        logger.exception("failed to query stuck processing documents")
+        return
+    if not doc_ids:
+        return
+    logger.info("recovering %d stuck processing document(s)", len(doc_ids))
+    for doc_id in doc_ids:
+        try:
+            await run_document_validation(storage, doc_id)
+        except Exception:
+            logger.exception("failed to recover processing document %s", doc_id)

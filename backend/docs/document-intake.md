@@ -262,7 +262,7 @@ COMPUTE_SHA256=true
 ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls
 ```
 
-`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (already required by the app) are reused for
+`SUPABASE_URL` / `SUPABASE_SECRET_KEY` (already required by the app) are reused for
 storage. All values above have sensible defaults and are tunable.
 
 ### 6.3 Run the migration

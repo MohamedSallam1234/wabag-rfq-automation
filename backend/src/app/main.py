@@ -1,16 +1,21 @@
 """FastAPI app factory: lifespan-managed OpenRouter SDK client + LLM router wiring."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
 from openrouter import OpenRouter
+from storage3 import AsyncStorageClient
 
 from app.agents.llm.router import LLMFatalError, LLMRouter, LLMTransientError, build_router
-from app.api.deps import get_router
+from app.api.deps import get_router, get_storage
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.database import ping_db
 from app.core.supabase import create_supabase_client
+from app.services.ingestion.upload import recover_stuck_processing_documents
 
 
 @asynccontextmanager
@@ -25,17 +30,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         supabase = await create_supabase_client(settings)
         app.state.supabase = supabase
         app.state.storage = supabase.storage
+        # Recover documents left in `processing` by a previous crash/restart, off the
+        # boot path so a slow/unreachable storage layer never blocks startup.
+        recovery_task = asyncio.create_task(
+            recover_stuck_processing_documents(supabase.storage, settings=settings)
+        )
+        app.state.recovery_task = recovery_task
         try:
             yield
         finally:
+            recovery_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await recovery_task
             await supabase.storage.session.aclose()
 
 
 def create_app() -> FastAPI:
     """Create the FastAPI app factory pattern."""
     app = FastAPI(
-        title="LinkDrop",
-        description="A personal URL shortener with tags and analytics.",
+        title="WABAG RFQ Automation",
+        description="Backend for RFQ document intake, classification, and generation.",
         version="0.1.0",
         contact={"name": "Mohamed Sallam", "email": "Sallamm733@gmail.com"},
         license_info={"name": "MIT"},
@@ -44,7 +58,21 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["meta"])
     def health(settings: Settings = Depends(get_settings)) -> dict[str, str]:  # noqa: B008
+        """Liveness probe: the process is up (does not check dependencies)."""
         return {"status": "ok", "env": settings.APP_ENV}
+
+    @app.get("/ready", tags=["meta"])
+    async def ready(
+        storage: AsyncStorageClient = Depends(get_storage),  # noqa: B008
+    ) -> dict[str, str]:
+        """Readiness probe: the database is reachable and the storage client is wired."""
+        try:
+            await ping_db()
+        except Exception as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database not ready") from exc
+        if storage is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "storage not ready")
+        return {"status": "ready"}
 
     @app.get("/llm/ping", tags=["meta"])
     async def llm_ping(
