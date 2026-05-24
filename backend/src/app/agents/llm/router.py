@@ -69,13 +69,8 @@ class ClaudeClient:
         self,
         user_message: str,
         task_instructions: str | None = None,
-        rfq_id: str | None = None,  # noqa: ARG002
     ) -> str:
         """Send a user message and return the assistant's text response.
-
-        ``rfq_id`` is part of the public router contract (documented for audit
-        wiring) and is intentionally accepted but not currently forwarded to
-        the SDK.
 
         Raises:
             LLMTransientError: Timeouts, 429, or any 5xx response.
@@ -142,11 +137,10 @@ class LLMRouter:
         self,
         user_message: str,
         task_instructions: str | None = None,
-        rfq_id: str | None = None,
     ) -> str:
         """Try primary; on transient failure, try fallback. Fatal errors bubble up."""
         try:
-            return await self._primary.ask(user_message, task_instructions, rfq_id)
+            return await self._primary.ask(user_message, task_instructions)
         except LLMTransientError as exc:
             logger.warning(
                 "primary LLM %s failed transiently, falling back to %s: %s",
@@ -154,7 +148,7 @@ class LLMRouter:
                 self._fallback.model,
                 exc,
             )
-            return await self._fallback.ask(user_message, task_instructions, rfq_id)
+            return await self._fallback.ask(user_message, task_instructions)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

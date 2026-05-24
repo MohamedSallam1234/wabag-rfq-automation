@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from openrouter import OpenRouter
@@ -56,13 +57,13 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/health", tags=["meta"])
-    def health(settings: Settings = Depends(get_settings)) -> dict[str, str]:  # noqa: B008
+    def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
         """Liveness probe: the process is up (does not check dependencies)."""
         return {"status": "ok", "env": settings.APP_ENV}
 
     @app.get("/ready", tags=["meta"])
     async def ready(
-        storage: AsyncStorageClient = Depends(get_storage),  # noqa: B008
+        storage: Annotated[AsyncStorageClient, Depends(get_storage)],
     ) -> dict[str, str]:
         """Readiness probe: the database is reachable and the storage client is wired."""
         try:
@@ -75,8 +76,8 @@ def create_app() -> FastAPI:
 
     @app.get("/llm/ping", tags=["meta"])
     async def llm_ping(
+        llm: Annotated[LLMRouter, Depends(get_router)],
         msg: str = "Which model are you? and what is your role?",
-        llm: LLMRouter = Depends(get_router),  # noqa: B008
     ) -> dict[str, str]:
         """Smoke-test the LLM router: round-trip a single user message."""
         try:

@@ -212,14 +212,14 @@ async def _download_to_file(
         client.stream("GET", url) as response,
     ):
         response.raise_for_status()
-        with open(tmp_path, "wb") as buffer:
+        async with await anyio.open_file(tmp_path, "wb") as buffer:
             async for chunk in response.aiter_bytes(settings.DOWNLOAD_CHUNK_SIZE):
                 if len(head) < SNIFF_LENGTH:
                     head += chunk[: SNIFF_LENGTH - len(head)]
                 size += len(chunk)
                 if hasher is not None:
                     hasher.update(chunk)
-                buffer.write(chunk)
+                await buffer.write(chunk)
     return head, size, (hasher.hexdigest() if hasher is not None else None)
 
 
@@ -245,6 +245,8 @@ async def download_object_to_tempfile(
         storage_path, settings.SIGNED_DOWNLOAD_URL_TTL_S
     )
     url = signed["signedURL"]
+    if not url:
+        raise StorageException("Supabase returned no signed download URL")
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
     try:

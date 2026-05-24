@@ -72,7 +72,6 @@ async def test_request_carries_system_prompt() -> None:
     await client.ask(
         user_message="hi",
         task_instructions="extract fields",
-        rfq_id="RFQ-42",
     )
 
     kwargs = fake_send.call_args.kwargs

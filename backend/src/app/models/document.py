@@ -17,7 +17,7 @@ def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
     SQLAlchemy's ``Enum`` binds the member name by default, which would not match the
     lowercase labels in the Postgres enum type created by the migration.
     """
-    return [str(member.value) for member in enum_cls]
+    return [str(member.value) for member in enum_cls.__members__.values()]
 
 
 class DocTypeSource(StrEnum):

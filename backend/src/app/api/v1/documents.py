@@ -55,7 +55,6 @@ _FALLBACK_CONTENT_TYPE = "application/octet-stream"
 
 @router.post(
     "/projects/{project_id}/documents/init",
-    response_model=DocumentInitResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def init_document_upload(
@@ -214,7 +213,7 @@ async def list_documents(
     return (await db.execute(stmt)).scalars().all()
 
 
-@router.get("/documents/{document_id}", response_model=DocumentDetail)
+@router.get("/documents/{document_id}")
 async def get_document(
     document_id: uuid.UUID,
     user: CurrentUser,
@@ -238,7 +237,10 @@ async def get_document(
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, "Could not create download URL"
             ) from exc
-        download_url = signed["signedURL"]
+        signed_url = signed["signedURL"]
+        if not signed_url:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not create download URL")
+        download_url = signed_url
     base = DocumentRead.model_validate(document)
     return DocumentDetail(**base.model_dump(), download_url=download_url)
 
