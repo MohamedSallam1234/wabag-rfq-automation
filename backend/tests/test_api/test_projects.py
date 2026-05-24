@@ -63,6 +63,20 @@ def test_create_project() -> None:
     session.add.assert_called_once()
 
 
+def test_create_project_rejects_negative_capacity() -> None:
+    """A negative capacity_m3d is rejected at the input boundary (422)."""
+    owner = uuid.uuid4()
+    session = _make_session()
+    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
+    app.dependency_overrides[get_db] = lambda: session
+
+    client = TestClient(app)
+    response = client.post("/api/v1/projects", json={"name": "Kohafa WWTP", "capacity_m3d": -5})
+
+    assert response.status_code == 422
+    session.add.assert_not_called()
+
+
 def test_list_projects_only_returns_callers() -> None:
     owner = uuid.uuid4()
     project = _make_project(owner)

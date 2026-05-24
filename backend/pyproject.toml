@@ -233,14 +233,16 @@ plugins = [# Third-party plugins
     "sqlalchemy.ext.mypy.plugin", # SQLAlchemy ORM support
 ]
 
-# openpyxl ships no type information (no py.typed); ignore its missing stubs.
+# openpyxl ships no type information (no py.typed); ignore its missing stubs. Both the
+# root module and submodules are listed because ``foo.*`` does not reliably match the
+# top-level ``foo`` across mypy versions, and the code does ``from openpyxl import ...``.
 [[tool.mypy.overrides]]
-module = ["openpyxl.*"]
+module = ["openpyxl", "openpyxl.*"]
 ignore_missing_imports = true
 
-# clamd ships no type stubs; ignore its missing types (lazy-imported, opt-in only).
+# clamd ships no type stubs; ignore its missing types (used for opt-in AV scanning).
 [[tool.mypy.overrides]]
-module = ["clamd.*"]
+module = ["clamd", "clamd.*"]
 ignore_missing_imports = true
 
 # -----------------------------------------------------------------------------

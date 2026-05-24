@@ -56,7 +56,7 @@ validates their contents — without ever buffering an upload through the backen
 | `src/app/services/ingestion/archive.py` | OOXML **decompression-bomb guard** — inspects the ZIP central directory (no extraction) and rejects archives over the uncompressed-size / ratio / entry-count caps. |
 | `src/app/services/ingestion/antivirus.py` | **Opt-in ClamAV** scan (`scan_file`) — lazy client, runs off the event loop, **fails closed** (an unreachable scanner is retryable, never silently accepted). |
 | `src/app/services/ingestion/upload.py` | Orchestration: request validation, storage paths, background object validation (magic → AV → zip-guard → parse), stale-pending purge, the periodic **`run_recovery_loop`**, and the reusable `download_object_to_tempfile()` helper. |
-| `src/app/core/supabase.py` | `create_supabase_client()` — service-role async client built once in the lifespan. |
+| `src/app/core/supabase.py` | `create_supabase_client()` — secret-key async client built once in the lifespan. |
 | `src/app/api/deps.py` | `get_storage()` dependency + owner-scoped loaders (`load_owned_project`, `load_owned_document`, `current_user_id`). |
 | `src/app/api/v1/projects.py` | Project create / list / get (owner-scoped). |
 | `src/app/api/v1/documents.py` | `init` / `finalize` (with per-file **and** project-total size re-check) / list / detail / `PATCH` (override) / `DELETE`. |
@@ -438,7 +438,7 @@ number).
    equipment types / sections); a DB enum would need an `ALTER TYPE` per label. Allowed
    labels are a Python `StrEnum` validated in the pydantic layer instead.
 6. **Owner-scoped, single-instance storage client.** The Supabase client is created once
-   in `lifespan` (service-role key, raised timeout) and shared via `get_storage` — a
+   in `lifespan` (secret key, raised timeout) and shared via `get_storage` — a
    lifecycle-scoped singleton, like the OpenRouter client. Not a module-level global,
    because the httpx client must bind to the running loop and be closed on shutdown.
 7. **Two non-transactional systems, compensating order.** `init` inserts the row then
@@ -601,7 +601,7 @@ The bucket (`SUPABASE_STORAGE_BUCKET`, default `rfq-documents`) must exist in th
 private, with the size limit + allowed MIME types.
 
 **Environment variables (Apidog/Postman):** `base_url` (`http://localhost:8000`),
-`supabase_url`, `anon_key`, `service_role_key` (only to create a test user), and the
+`supabase_url`, `publishable_key`, `secret_key` (only to create a test user), and the
 runtime-filled `token`, `project_id`, `document_id`, `upload_url`, `upload_token`,
 `storage_path`. **Pre-declare them** so they persist, and set collection-level **Bearer
 `{{token}}`** (turn it **off** for the one direct Supabase PUT).
@@ -611,8 +611,8 @@ runtime-filled `token`, `project_id`, `document_id`, `upload_url`, `upload_token
 > failed request doesn't blank good values (`if (pm.response.code < 300) { … }`).
 
 **0. Get a JWT** — `POST {{supabase_url}}/auth/v1/token?grant_type=password` with header
-`apikey: {{anon_key}}` and body `{ "email", "password" }`. (Create a confirmed user first via
-`POST {{supabase_url}}/auth/v1/admin/users` with the `service_role_key` and
+`apikey: {{publishable_key}}` and body `{ "email", "password" }`. (Create a confirmed user first
+via `POST {{supabase_url}}/auth/v1/admin/users` with the `secret_key` and
 `"email_confirm": true`.) Save the token:
 ```javascript
 if (pm.response.code < 300) pm.environment.set("token", pm.response.json().access_token);
@@ -741,7 +741,7 @@ that association is a generation-time concern. So documents attach to the projec
 A: `finalize` calls `await db.commit()` before `background_tasks.add_task(...)`, so the
 status is durable before the in-process task opens its own session.
 
-**Q: How is the service-role key kept safe?**
+**Q: How is the secret key kept safe?**
 A: It's used only server-side to mint short-TTL signed URLs and to manage objects; it's never
 returned to clients, and `storage_path`/`storage_bucket` are never serialized in responses.
 

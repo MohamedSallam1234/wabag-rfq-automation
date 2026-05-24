@@ -110,7 +110,17 @@ def upgrade() -> None:
     # The runtime role (app_user) connects with least privilege. ALTER DEFAULT
     # PRIVILEGES may not cover tables created by the migration role, so grant DML
     # explicitly. PKs are client-side UUIDs, so no sequence grants are needed.
-    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON projects, documents TO app_user")
+    # Guarded with a role-existence check so the migration stays portable on databases
+    # where app_user was not provisioned (mirrors the guard in b67bd39c4d4c).
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN
+                GRANT SELECT, INSERT, UPDATE, DELETE ON projects, documents TO app_user;
+            END IF;
+        END
+        $$
+    """)
 
 
 def downgrade() -> None:

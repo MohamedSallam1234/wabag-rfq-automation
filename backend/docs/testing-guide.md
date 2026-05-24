@@ -38,7 +38,7 @@ uv run uvicorn app.main:app --reload --port 8000  # app on http://127.0.0.1:8000
 
 - The Storage bucket (`SUPABASE_STORAGE_BUCKET`, default `rfq-documents`) must exist in that
   project — **private**, with `file_size_limit` and `allowed_mime_types` set (see
-  `document-intake.md` §6.1).
+  `document-intake.md` §7.1).
 - Quick liveness/readiness check:
   - `GET http://127.0.0.1:8000/health` → `{"status":"ok",...}` (process is up).
   - `GET http://127.0.0.1:8000/ready` → `200 {"status":"ready"}` when the DB is reachable

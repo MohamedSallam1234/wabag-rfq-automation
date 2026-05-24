@@ -45,8 +45,14 @@ _RULES: list[tuple[re.Pattern[str], DocType]] = [
         DocType.LOCAL_CONTROL_PANEL_DATASHEET,
     ),
     (re.compile(r"^Authorization letter", re.IGNORECASE), DocType.RFQ_AUTHORIZATION_LETTER),
-    (re.compile(r".*DataSheet.*\.pdf$", re.IGNORECASE), DocType.EQUIPMENT_DATASHEET),
-    (re.compile(r".*Specs.*\.pdf$", re.IGNORECASE), DocType.EQUIPMENT_SPECIFICATION_DOCUMENT),
+]
+
+# Generic equipment documents: a keyword appearing anywhere in a PDF filename, applied
+# only after the specific prefix rules above fail. Plain substring checks (not
+# ``.*keyword.*\.pdf$`` regexes) avoid polynomial regex backtracking on adversarial names.
+_PDF_KEYWORD_RULES: list[tuple[str, DocType]] = [
+    ("datasheet", DocType.EQUIPMENT_DATASHEET),
+    ("specs", DocType.EQUIPMENT_SPECIFICATION_DOCUMENT),
 ]
 
 # Matches Rev00, Rev01, rev.01, Rev 01, Rev000, Rev00a, etc.
@@ -67,6 +73,23 @@ def _basename(filename: str) -> str:
     return filename.replace("\\", "/").rsplit("/", 1)[-1]
 
 
+def _classify_doc_type(name: str) -> str | None:
+    """Return the document type for a basename, or ``None`` if nothing matches.
+
+    Specific prefix/keyword regex rules win first; otherwise a PDF whose name contains a
+    known equipment keyword is classified generically.
+    """
+    for pattern, label in _RULES:
+        if pattern.search(name):
+            return label.value
+    lowered = name.lower()
+    if lowered.endswith(".pdf"):
+        for keyword, label in _PDF_KEYWORD_RULES:
+            if keyword in lowered:
+                return label.value
+    return None
+
+
 def classify_filename(filename: str) -> Classification:
     """Classify a filename into a document type and parse its revision.
 
@@ -78,12 +101,7 @@ def classify_filename(filename: str) -> Classification:
         (the engineer can override it later).
     """
     name = _basename(filename)
-
-    doc_type: str | None = None
-    for pattern, label in _RULES:
-        if pattern.search(name):
-            doc_type = label.value
-            break
+    doc_type = _classify_doc_type(name)
 
     revision_label: str | None = None
     revision_number: int | None = None

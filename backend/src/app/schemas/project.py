@@ -14,7 +14,7 @@ class ProjectCreate(BaseModel):
     client: str | None = Field(default=None, max_length=255)
     consultant: str | None = Field(default=None, max_length=255)
     project_number: str | None = Field(default=None, max_length=128)
-    capacity_m3d: int | None = None
+    capacity_m3d: int | None = Field(default=None, gt=0, description="Plant capacity in m3/day")
 
 
 class ProjectRead(BaseModel):

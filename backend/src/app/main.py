@@ -8,10 +8,9 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from openrouter import OpenRouter
-from storage3 import AsyncStorageClient
 
 from app.agents.llm.router import LLMFatalError, LLMRouter, LLMTransientError, build_router
-from app.api.deps import get_router, get_storage
+from app.api.deps import get_router
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.database import ping_db
@@ -62,16 +61,12 @@ def create_app() -> FastAPI:
         return {"status": "ok", "env": settings.APP_ENV}
 
     @app.get("/ready", tags=["meta"])
-    async def ready(
-        storage: Annotated[AsyncStorageClient, Depends(get_storage)],
-    ) -> dict[str, str]:
-        """Readiness probe: the database is reachable and the storage client is wired."""
+    async def ready() -> dict[str, str]:
+        """Readiness probe: the database is reachable (storage is wired at startup)."""
         try:
             await ping_db()
         except Exception as exc:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database not ready") from exc
-        if storage is None:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "storage not ready")
         return {"status": "ready"}
 
     @app.get("/llm/ping", tags=["meta"])

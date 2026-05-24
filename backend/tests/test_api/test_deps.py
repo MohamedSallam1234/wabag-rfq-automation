@@ -60,6 +60,20 @@ def test_current_user_id_parses_sub() -> None:
     assert deps.current_user_id({"sub": str(user_id)}) == user_id
 
 
+def test_current_user_id_missing_sub_raises_401() -> None:
+    """A token without a 'sub' claim is an auth failure, not a 500."""
+    with pytest.raises(HTTPException) as exc:
+        deps.current_user_id({})
+    assert exc.value.status_code == 401
+
+
+def test_current_user_id_malformed_sub_raises_401() -> None:
+    """A non-UUID 'sub' claim is an auth failure, not a 500."""
+    with pytest.raises(HTTPException) as exc:
+        deps.current_user_id({"sub": "not-a-uuid"})
+    assert exc.value.status_code == 401
+
+
 async def test_load_owned_project_returns_owned() -> None:
     owner = uuid4()
     project = MagicMock(owner_id=owner)

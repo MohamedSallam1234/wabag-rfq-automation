@@ -42,8 +42,16 @@ def get_storage(request: Request) -> AsyncStorageClient:
 
 
 def current_user_id(user: dict[str, Any]) -> uuid.UUID:
-    """Extract the Supabase user id (UUID) from decoded JWT claims."""
-    return uuid.UUID(str(user["sub"]))
+    """Extract the Supabase user id (UUID) from decoded JWT claims.
+
+    Raises:
+        HTTPException: 401 if the ``sub`` claim is missing or not a valid UUID
+            (a malformed token is an auth failure, not a server error).
+    """
+    try:
+        return uuid.UUID(str(user["sub"]))
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token") from exc
 
 
 async def load_owned_project(
