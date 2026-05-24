@@ -71,7 +71,7 @@ validates their contents — without ever buffering an upload through the backen
 
 ### Architecture in one picture
 
-```
+```text
   ┌──────────┐  1. POST .../documents/init        ┌──────────────┐
   │  Client  │ ─────────────────────────────────► │   Backend    │
   │ (web/UI) │ ◄───────────────────────────────── │  (FastAPI)   │
@@ -108,6 +108,7 @@ All endpoints require a Supabase JWT (`Authorization: Bearer <token>`) and are
 to avoid leaking existence). A missing/invalid token returns **401**.
 
 ### Projects
+
 | Method & path | Purpose |
 |---|---|
 | `POST /api/v1/projects` | Create a project owned by the caller. |
@@ -115,6 +116,7 @@ to avoid leaking existence). A missing/invalid token returns **401**.
 | `GET /api/v1/projects/{project_id}` | Fetch one (404 if not owned). |
 
 ### Documents
+
 | Method & path | Purpose | Notable responses |
 |---|---|---|
 | `POST /api/v1/projects/{project_id}/documents/init` | Validate + classify a planned upload; create a `pending` row; return a signed upload URL. | `201`; `415` bad ext; `413` too large (file or project total); `409` over per-project file-count cap; `404` project not owned. |
@@ -361,7 +363,7 @@ enum), `retention` (`persistent`/`transient` enum), `failure_reason?`,
 > **Enum storage:** the `*_source` / `status` / `retention` columns use real Postgres enum
 > types whose labels are the **lowercase values** (`failed`, not `FAILED`); the ORM binds
 > values via `values_callable` so they match.
-
+>
 > **RLS is intentionally not added** to these tables: the runtime role `app_user` has
 > `BYPASSRLS`, so policies would have no effect at runtime — authorization is enforced
 > in Python (auth required + owner filtering). Noted as an optional parity follow-up.
@@ -668,7 +670,7 @@ PDFs show `page_count`; xlsx shows `sheet_names`; both expose a `download_url`.
 | Risk | How it's handled |
 |---|---|
 | storage3's 20s httpx timeout aborts large streams | `STORAGE_CLIENT_TIMEOUT_S=120` on the client; bucket `file_size_limit` bounds object size. |
-| `app_user` lacks DML on new tables → "permission denied" | Migration emits explicit `GRANT … TO app_user` unconditionally. |
+| `app_user` lacks DML on new tables → "permission denied" | Migration emits an explicit `GRANT … TO app_user` (guarded by a role-existence check). |
 | storage3 `download()` buffers the whole object in RAM | Background validation streams via a signed URL + `httpx.AsyncClient.stream`, chunked to disk — never `download()`. |
 | OOXML **decompression bomb** (small upload → huge expansion) | `archive.py` reads the ZIP central directory (no extraction) and rejects over the uncompressed-size / ratio / entry-count caps before parsing → permanent `failed`. |
 | **Malicious content** | Optional ClamAV scan (`AV_SCAN_ENABLED`) of the downloaded bytes, **fail-closed**; plus private bucket, `allowed_mime_types` + `file_size_limit`, prompt deletion of `failed` objects, and files only ever downloaded server-side for validation — never executed/served inline. |
