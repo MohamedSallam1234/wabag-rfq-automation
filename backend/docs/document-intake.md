@@ -61,7 +61,7 @@ validates their contents — without ever buffering an upload through the backen
 | `src/app/api/v1/projects.py` | Project create / list / get (owner-scoped). |
 | `src/app/api/v1/documents.py` | `init` / `finalize` (with per-file **and** project-total size re-check) / list / detail / `PATCH` (override) / `DELETE`. |
 | `src/app/api/v1/router.py` | Aggregates the v1 routers; included by `main.py`. |
-| `src/app/schemas/project.py` / `document.py` | Pydantic request/response models (`storage_path`/`storage_bucket` are never exposed). |
+| `src/app/schemas/project.py` / `document.py` | Pydantic request/response models (`storage_bucket` is never exposed; `storage_path` only in the upload-init response). |
 | `src/app/core/config.py` | Storage/upload settings (bucket, caps, TTLs, timeout, allowed extensions) + recovery-sweep interval + validation-hardening (zip-bomb caps, ClamAV toggle/connection). |
 | `src/app/main.py` | Lifespan creates/closes the Supabase client, includes the v1 router, and runs the periodic recovery sweep (`run_recovery_loop`). |
 | `alembic/versions/f1a2b3c4d5e6_create_projects_and_documents.py` | Creates `projects` + `documents`, enum types, indexes, FKs, and explicit `app_user` GRANTs. |
@@ -742,8 +742,11 @@ A: `finalize` calls `await db.commit()` before `background_tasks.add_task(...)`,
 status is durable before the in-process task opens its own session.
 
 **Q: How is the secret key kept safe?**
-A: It's used only server-side to mint short-TTL signed URLs and to manage objects; it's never
-returned to clients, and `storage_path`/`storage_bucket` are never serialized in responses.
+A: It's used only server-side to mint short-TTL signed URLs and to manage objects, and is never
+returned to clients. `storage_bucket` is never serialized; `storage_path` is returned only by the
+upload-`init` response (the client needs it to PUT the bytes), never in other document reads. Both
+are harmless to expose anyway — the bucket is private (signed-URL-only) and the path is just the
+project/document UUIDs the client already holds.
 
 **Q: How will the extraction/validation feature (F-03/F-04) consume this?**
 A: List a project's `ready` documents (`GET /projects/{id}/documents`, or query `Document`
