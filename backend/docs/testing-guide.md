@@ -122,7 +122,6 @@ curl -s -X POST "$BASE/api/v1/projects" -H "Authorization: Bearer $TOKEN" \
 `POST {{base_url}}/api/v1/projects/{{project_id}}/documents/init` (Bearer) — body:
 ```json
 { "filename": "01_Employer_Technical_Specifications_Rev02.pdf",
-  "content_type": "application/pdf",
   "size_bytes": 2400000 }
 ```
 → **201**. Verify `document.doc_type == "Employer Technical Specifications"`,
@@ -146,8 +145,8 @@ curl -s -X PUT "$UPLOAD_URL" -H "x-upsert: true" \
 # → {"Key":"rfq-documents/<project>/<document>.pdf"}
 ```
 
-> The `upload_url`/`token` are single‑use and expire after `SIGNED_UPLOAD_URL_TTL_S`
-> (default 300 s). Re‑run `init` for a fresh pair if a step expires.
+> The `upload_url`/`token` are single‑use and short‑lived (the TTL is controlled by
+> Supabase, not the backend). Re‑run `init` for a fresh pair if a step expires.
 
 ### 5.4 Finalize
 `POST {{base_url}}/api/v1/documents/{{document_id}}/finalize` (Bearer, no body) → **200**,

@@ -77,6 +77,8 @@ class Document(Base):
     storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    # Hex SHA-256 of the stored bytes; reserved for future content dedup / integrity
+    # (computed when COMPUTE_SHA256 is on, no consumer yet).
     sha256: Mapped[str | None] = mapped_column(String(64))
     doc_type: Mapped[str | None] = mapped_column(String(64), index=True)
     doc_type_source: Mapped[DocTypeSource] = mapped_column(

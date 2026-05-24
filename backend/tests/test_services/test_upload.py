@@ -1,5 +1,6 @@
 """Tests for the upload orchestration service."""
 
+import asyncio
 import io
 import os
 import uuid
@@ -16,6 +17,8 @@ from storage3.utils import StorageException
 from app.core.config import get_settings
 from app.models.document import DocTypeSource, Document, DocumentStatus
 from app.services.ingestion import upload
+from app.services.ingestion.antivirus import ScanResult
+from app.services.ingestion.archive import ZipBombError
 from app.services.ingestion.upload import UploadValidationError, ValidationOutcome
 
 SETTINGS = get_settings()
@@ -303,6 +306,59 @@ async def test_validate_stored_object_parse_failure() -> None:
     assert "parsed" in (outcome.failure_reason or "")
 
 
+async def test_validate_stored_object_malware_is_permanent() -> None:
+    storage, _ = _storage_with_proxy()
+    response = _FakeResponse(_pdf_bytes(pages=1))
+    with (
+        patch.object(upload.httpx, "AsyncClient", lambda *a, **k: _FakeHttpClient(response)),
+        patch.object(
+            upload, "scan_file", AsyncMock(return_value=ScanResult(clean=False, signature="Eicar"))
+        ),
+    ):
+        outcome = await upload.validate_stored_object(
+            storage, bucket="b", storage_path="p", ext=".pdf", settings=SETTINGS
+        )
+    assert outcome.ok is False
+    assert outcome.transient is False  # an infected file is a permanent failure
+    assert "Malware" in (outcome.failure_reason or "")
+
+
+async def test_validate_stored_object_scanner_error_is_transient() -> None:
+    storage, _ = _storage_with_proxy()
+    response = _FakeResponse(_pdf_bytes(pages=1))
+    with (
+        patch.object(upload.httpx, "AsyncClient", lambda *a, **k: _FakeHttpClient(response)),
+        patch.object(
+            upload, "scan_file", AsyncMock(return_value=ScanResult(clean=False, error="refused"))
+        ),
+    ):
+        outcome = await upload.validate_stored_object(
+            storage, bucket="b", storage_path="p", ext=".pdf", settings=SETTINGS
+        )
+    assert outcome.ok is False
+    assert outcome.transient is True  # fail closed: an unreachable scanner is retryable
+    assert "Antivirus" in (outcome.failure_reason or "")
+
+
+async def test_validate_stored_object_zip_bomb_is_permanent() -> None:
+    storage, _ = _storage_with_proxy()
+    response = _FakeResponse(_xlsx_bytes())
+    with (
+        patch.object(upload.httpx, "AsyncClient", lambda *a, **k: _FakeHttpClient(response)),
+        patch.object(
+            upload,
+            "assert_zip_within_limits",
+            MagicMock(side_effect=ZipBombError("archive expands too much")),
+        ),
+    ):
+        outcome = await upload.validate_stored_object(
+            storage, bucket="b", storage_path="p", ext=".xlsx", settings=SETTINGS
+        )
+    assert outcome.ok is False
+    assert outcome.transient is False  # a zip bomb is a permanent content failure
+    assert "expands too much" in (outcome.failure_reason or "")
+
+
 async def test_download_object_to_tempfile_streams_to_disk() -> None:
     storage, _ = _storage_with_proxy()
     payload = _pdf_bytes(pages=1)
@@ -587,3 +643,34 @@ async def test_recover_stuck_processing_continues_past_failures() -> None:
     ):
         await upload.recover_stuck_processing_documents(storage, settings=SETTINGS)
     assert redrive.await_count == 2  # the first failing does not stop the second
+
+
+# --------------------------------------------------------------------------- #
+# Periodic recovery loop
+# --------------------------------------------------------------------------- #
+async def test_run_recovery_loop_sweeps_then_sleeps() -> None:
+    storage, _ = _storage_with_proxy()
+    sweep = AsyncMock()
+    sleep = AsyncMock(side_effect=asyncio.CancelledError)  # stop after the first iteration
+    with (
+        patch.object(upload, "recover_stuck_processing_documents", sweep),
+        patch.object(upload.anyio, "sleep", sleep),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await upload.run_recovery_loop(storage, settings=SETTINGS)
+    sweep.assert_awaited_once()
+    sleep.assert_awaited_once()
+
+
+async def test_run_recovery_loop_survives_sweep_error() -> None:
+    storage, _ = _storage_with_proxy()
+    sweep = AsyncMock(side_effect=RuntimeError("boom"))
+    sleep = AsyncMock(side_effect=asyncio.CancelledError)
+    with (
+        patch.object(upload, "recover_stuck_processing_documents", sweep),
+        patch.object(upload.anyio, "sleep", sleep),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await upload.run_recovery_loop(storage, settings=SETTINGS)
+    sweep.assert_awaited_once()  # error swallowed; the loop still reached the sleep
+    sleep.assert_awaited_once()

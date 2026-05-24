@@ -15,7 +15,7 @@ from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.database import ping_db
 from app.core.supabase import create_supabase_client
-from app.services.ingestion.upload import recover_stuck_processing_documents
+from app.services.ingestion.upload import run_recovery_loop
 
 
 @asynccontextmanager
@@ -30,11 +30,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         supabase = await create_supabase_client(settings)
         app.state.supabase = supabase
         app.state.storage = supabase.storage
-        # Recover documents left in `processing` by a previous crash/restart, off the
-        # boot path so a slow/unreachable storage layer never blocks startup.
-        recovery_task = asyncio.create_task(
-            recover_stuck_processing_documents(supabase.storage, settings=settings)
-        )
+        # Periodically re-drive documents stuck in `processing` (crash/restart or a
+        # transient validation failure left for retry). Runs off the boot path so a
+        # slow/unreachable storage layer never blocks startup; cancelled on shutdown.
+        recovery_task = asyncio.create_task(run_recovery_loop(supabase.storage, settings=settings))
         app.state.recovery_task = recovery_task
         try:
             yield

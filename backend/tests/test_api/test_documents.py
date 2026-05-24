@@ -11,6 +11,7 @@ from storage3.utils import StorageException
 
 from app.api.deps import get_db, get_storage
 from app.api.v1 import documents as documents_module
+from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.main import app
 from app.models.document import DocTypeSource, Document, DocumentStatus, RetentionPolicy
@@ -188,6 +189,7 @@ def test_finalize_marks_processing_and_schedules(monkeypatch: pytest.MonkeyPatch
     document = _make_document(project.id, status=DocumentStatus.PENDING)
     session = _make_session()
     session.get = AsyncMock(side_effect=[document, project])
+    session.execute = AsyncMock(return_value=_usage(0, 0))  # no other docs against the quota
     storage, proxy = _make_storage()
     proxy.info = AsyncMock(return_value={"size": 1000})
     scheduled = AsyncMock()
@@ -245,6 +247,32 @@ def test_finalize_oversized_object_fails_and_removes() -> None:
     session.commit.assert_awaited_once()
 
 
+def test_finalize_over_project_total_fails_and_removes() -> None:
+    owner = uuid.uuid4()
+    project = _make_project(owner)
+    document = _make_document(project.id, status=DocumentStatus.PENDING)
+    session = _make_session()
+    session.get = AsyncMock(side_effect=[document, project])
+    storage, proxy = _make_storage()
+    proxy.info = AsyncMock(return_value={"size": 1000})  # small file, passes the per-file cap
+    # Other documents already sit at the project cap → the actual size tips it over,
+    # even though the per-file check passed (client under-declared at init).
+    over_total = get_settings().MAX_PROJECT_TOTAL_SIZE_MB * _MB
+    session.execute = AsyncMock(return_value=_usage(1, over_total))
+
+    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[get_storage] = lambda: storage
+
+    client = TestClient(app)
+    response = client.post(f"/api/v1/documents/{document.id}/finalize")
+
+    assert response.status_code == 413
+    assert document.status == DocumentStatus.FAILED
+    assert "project size limit" in (document.failure_reason or "")
+    proxy.remove.assert_awaited_once()
+
+
 def test_finalize_conflict_when_not_pending() -> None:
     owner = uuid.uuid4()
     project = _make_project(owner)
@@ -299,6 +327,43 @@ def test_get_document_includes_download_url() -> None:
     assert response.json()["download_url"] == "https://download"
 
 
+def test_get_document_signing_failure_returns_502() -> None:
+    owner = uuid.uuid4()
+    project = _make_project(owner)
+    document = _make_document(project.id, status=DocumentStatus.READY)
+    session = _make_session()
+    session.get = AsyncMock(side_effect=[document, project])
+    storage, proxy = _make_storage()
+    proxy.create_signed_url = AsyncMock(side_effect=StorageException("boom"))
+
+    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[get_storage] = lambda: storage
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/documents/{document.id}")
+    assert response.status_code == 502
+
+
+def test_get_document_failed_has_no_download_url() -> None:
+    owner = uuid.uuid4()
+    project = _make_project(owner)
+    document = _make_document(project.id, status=DocumentStatus.FAILED)
+    session = _make_session()
+    session.get = AsyncMock(side_effect=[document, project])
+    storage, proxy = _make_storage()
+
+    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[get_storage] = lambda: storage
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/documents/{document.id}")
+    assert response.status_code == 200
+    assert response.json()["download_url"] == ""
+    proxy.create_signed_url.assert_not_awaited()  # no object to sign for a failed doc
+
+
 def test_patch_document_classification_sets_manual_and_recomputes_retention() -> None:
     owner = uuid.uuid4()
     project = _make_project(owner)
@@ -335,3 +400,22 @@ def test_delete_document_removes_object() -> None:
     assert response.status_code == 204
     session.delete.assert_awaited_once()
     proxy.remove.assert_awaited_once()
+
+
+def test_delete_document_swallows_storage_error() -> None:
+    owner = uuid.uuid4()
+    project = _make_project(owner)
+    document = _make_document(project.id)
+    session = _make_session()
+    session.get = AsyncMock(side_effect=[document, project])
+    storage, proxy = _make_storage()
+    proxy.remove = AsyncMock(side_effect=StorageException("gone"))
+
+    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[get_storage] = lambda: storage
+
+    client = TestClient(app)
+    response = client.delete(f"/api/v1/documents/{document.id}")
+    assert response.status_code == 204  # storage orphan is logged, not fatal
+    session.delete.assert_awaited_once()

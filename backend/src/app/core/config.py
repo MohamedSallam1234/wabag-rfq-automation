@@ -73,20 +73,40 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 100
     MAX_FILES_PER_PROJECT: int = 50
     MAX_PROJECT_TOTAL_SIZE_MB: int = 1000
-    SIGNED_UPLOAD_URL_TTL_S: int = 300
     SIGNED_DOWNLOAD_URL_TTL_S: int = 600
     DOWNLOAD_CHUNK_SIZE: int = 1024 * 1024
     STORAGE_CLIENT_TIMEOUT_S: int = 120
     PENDING_UPLOAD_TTL_MIN: int = 60
+    # Computed during validation and stored on the document; reserved for future
+    # content dedup / integrity checks (no consumer yet — safe to disable to save the hash).
     COMPUTE_SHA256: bool = True
 
     # Background validation / recovery
     VALIDATION_MAX_ATTEMPTS: int = 3
     VALIDATION_RETRY_BACKOFF_S: float = 0.5
     PROCESSING_RECOVERY_TTL_MIN: int = 15
+    # How often the lifespan re-drives documents stuck in `processing` (steady-state,
+    # not just at boot). See `run_recovery_loop`.
+    RECOVERY_SWEEP_INTERVAL_S: int = 300
     ALLOWED_UPLOAD_EXTENSIONS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [".pdf", ".docx", ".xlsx", ".xls"],
     )
+
+    # File-content safety (validation hardening)
+    # OOXML (.xlsx/.docx) are ZIP containers; a small upload can decompress to a huge
+    # payload. These caps are checked against the ZIP central directory (no extraction)
+    # before deep-parsing, rejecting decompression bombs.
+    MAX_DECOMPRESSED_SIZE_MB: int = 500
+    MAX_COMPRESSION_RATIO: int = 100
+    MAX_ARCHIVE_ENTRIES: int = 10000
+    # Opt-in ClamAV scanning of uploaded bytes during background validation. When
+    # enabled, a scanner error fails closed (the document is retried, never accepted
+    # unscanned). Configure either CLAMD_SOCKET (unix socket) or CLAMD_HOST/CLAMD_PORT.
+    AV_SCAN_ENABLED: bool = False
+    CLAMD_HOST: str = ""
+    CLAMD_PORT: int = 3310
+    CLAMD_SOCKET: str = ""
+    CLAMD_TIMEOUT_S: float = 30.0
 
     # LLM (OpenRouter — Claude Opus 4.7 primary, Sonnet 4.6 fallback)
     OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)

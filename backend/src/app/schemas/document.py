@@ -13,7 +13,6 @@ class DocumentInitRequest(BaseModel):
     """Payload to begin a direct-to-storage upload."""
 
     filename: str = Field(min_length=1, max_length=512)
-    content_type: str | None = Field(default=None, max_length=128)
     size_bytes: int = Field(gt=0, description="Client-declared file size in bytes")
 
 

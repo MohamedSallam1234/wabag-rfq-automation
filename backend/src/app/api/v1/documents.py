@@ -4,7 +4,7 @@ import contextlib
 import logging
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
@@ -130,6 +130,18 @@ async def init_document_upload(
     )
 
 
+async def _fail_finalize(
+    db: AsyncSession, storage: AsyncStorageClient, document: Document, reason: str
+) -> NoReturn:
+    """Mark a finalizing document ``failed``, remove its object, and raise 413."""
+    with contextlib.suppress(StorageException):
+        await storage.from_(document.storage_bucket).remove([document.storage_path])
+    document.status = DocumentStatus.FAILED
+    document.failure_reason = reason
+    await db.commit()  # persist the failure before signalling the client
+    raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, reason)
+
+
 @router.post("/documents/{document_id}/finalize", response_model=DocumentRead)
 async def finalize_document_upload(
     document_id: uuid.UUID,
@@ -142,8 +154,10 @@ async def finalize_document_upload(
     """Verify the uploaded object and kick off background content validation.
 
     Returns the document with ``status=processing``; the client polls until it is
-    ``ready`` or ``failed``. An object that is missing yields 400 (retryable, the
-    row stays ``pending``); an oversized object yields 413 and is marked ``failed``.
+    ``ready`` or ``failed``. An object that is missing yields 400 (retryable, the row
+    stays ``pending``); an object that breaks the per-file or project-total size cap
+    yields 413 and is marked ``failed`` (re-checking the actual size here closes the
+    gap where a client under-declared its size at init).
     """
     owner_id = current_user_id(user)
     document = await load_owned_document(db, document_id, owner_id)
@@ -161,16 +175,20 @@ async def finalize_document_upload(
 
     max_file = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     if actual_size is not None and actual_size > max_file:
-        with contextlib.suppress(StorageException):
-            await storage.from_(document.storage_bucket).remove([document.storage_path])
-        document.status = DocumentStatus.FAILED
-        document.failure_reason = "Uploaded object exceeds the size limit"
-        await db.commit()  # persist the failure before signalling the client
-        raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Uploaded object exceeds the size limit"
-        )
+        await _fail_finalize(db, storage, document, "Uploaded object exceeds the size limit")
 
     if actual_size is not None:
+        # Re-check the project total against the *actual* size (init only saw the
+        # declared size). The authoritative quota lock is held at init; this is a
+        # single-instance backstop, so no extra row lock is taken here.
+        max_total = settings.MAX_PROJECT_TOTAL_SIZE_MB * 1024 * 1024
+        _, other_total = await get_project_document_usage(
+            db, document.project_id, exclude_document_id=document.id
+        )
+        if other_total + actual_size > max_total:
+            await _fail_finalize(
+                db, storage, document, "Upload would exceed the project size limit"
+            )
         document.size_bytes = actual_size
     document.status = DocumentStatus.PROCESSING
     # Commit before scheduling so the background task's own session sees `processing`
@@ -207,10 +225,19 @@ async def get_document(
     """Fetch document metadata plus a short-lived signed download URL (404 if not owned)."""
     document = await load_owned_document(db, document_id, current_user_id(user))
     download_url = ""
-    with contextlib.suppress(StorageException):
-        signed = await storage.from_(document.storage_bucket).create_signed_url(
-            document.storage_path, settings.SIGNED_DOWNLOAD_URL_TTL_S
-        )
+    # Only ready/processing documents have stored bytes to sign for; pending has no
+    # upload yet and failed has had its object removed. If signing fails for a document
+    # that should have bytes, surface it (502) rather than returning an empty URL.
+    if document.status in (DocumentStatus.READY, DocumentStatus.PROCESSING):
+        try:
+            signed = await storage.from_(document.storage_bucket).create_signed_url(
+                document.storage_path, settings.SIGNED_DOWNLOAD_URL_TTL_S
+            )
+        except StorageException as exc:
+            logger.warning("failed to create download URL for %s: %s", document_id, exc)
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY, "Could not create download URL"
+            ) from exc
         download_url = signed["signedURL"]
     base = DocumentRead.model_validate(document)
     return DocumentDetail(**base.model_dump(), download_url=download_url)
@@ -239,5 +266,8 @@ async def delete_document(
     bucket, path = document.storage_bucket, document.storage_path
     await db.delete(document)
     await db.flush()
-    with contextlib.suppress(StorageException):
+    try:
         await storage.from_(bucket).remove([path])
+    except StorageException as exc:
+        # The row is gone but the object lingers; log so the orphan is observable.
+        logger.warning("failed to remove storage object %s/%s on delete: %s", bucket, path, exc)

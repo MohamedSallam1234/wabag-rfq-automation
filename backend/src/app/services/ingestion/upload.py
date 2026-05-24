@@ -8,6 +8,7 @@ files.
 """
 
 import contextlib
+import functools
 import hashlib
 import logging
 import os
@@ -27,6 +28,8 @@ from storage3.utils import StorageException
 from app.core.config import Settings, get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.document import Document, DocumentStatus
+from app.services.ingestion.antivirus import scan_file
+from app.services.ingestion.archive import ZipBombError, assert_zip_within_limits
 from app.services.ingestion.excel_parser import extract_xlsx_sheet_names
 from app.services.ingestion.filetype import (
     SNIFF_LENGTH,
@@ -145,8 +148,15 @@ def validate_upload_request(
     return ext
 
 
-async def get_project_document_usage(db: AsyncSession, project_id: uuid.UUID) -> tuple[int, int]:
-    """Return ``(count, total_size_bytes)`` of non-failed documents in a project."""
+async def get_project_document_usage(
+    db: AsyncSession, project_id: uuid.UUID, *, exclude_document_id: uuid.UUID | None = None
+) -> tuple[int, int]:
+    """Return ``(count, total_size_bytes)`` of non-failed documents in a project.
+
+    ``exclude_document_id`` omits one document from the totals — used at finalize to
+    measure usage *excluding* the document being finalized (whose row already carries
+    the client-declared size, which the actual size will replace).
+    """
     stmt = select(
         func.count(Document.id),
         func.coalesce(func.sum(Document.size_bytes), 0),
@@ -154,6 +164,8 @@ async def get_project_document_usage(db: AsyncSession, project_id: uuid.UUID) ->
         Document.project_id == project_id,
         Document.status != DocumentStatus.FAILED,
     )
+    if exclude_document_id is not None:
+        stmt = stmt.where(Document.id != exclude_document_id)
     count, total = (await db.execute(stmt)).one()
     return int(count), int(total)
 
@@ -190,6 +202,8 @@ async def _download_to_file(
     """Stream a signed-URL download to ``tmp_path``; return (head bytes, size, sha256)."""
     head = b""
     size = 0
+    # sha256 is stored on the document for future content dedup / integrity; it has no
+    # consumer yet, so COMPUTE_SHA256 can be disabled to skip the hashing cost.
     hasher = hashlib.sha256() if settings.COMPUTE_SHA256 else None
     async with (
         httpx.AsyncClient(
@@ -242,20 +256,45 @@ async def download_object_to_tempfile(
     return DownloadedObject(path=tmp_path, size_bytes=size, head=head, sha256=sha)
 
 
-async def _deep_parse(tmp_path: str, ext: str) -> tuple[int | None, list[str] | None]:
+async def _assert_archive_safe(tmp_path: str, settings: Settings) -> None:
+    """Reject OOXML decompression bombs before parsing (raises :class:`_ParseError`)."""
+    check = functools.partial(
+        assert_zip_within_limits,
+        tmp_path,
+        max_uncompressed_bytes=settings.MAX_DECOMPRESSED_SIZE_MB * _BYTES_PER_MB,
+        max_ratio=settings.MAX_COMPRESSION_RATIO,
+        max_entries=settings.MAX_ARCHIVE_ENTRIES,
+    )
+    try:
+        await anyio.to_thread.run_sync(check)
+    except ZipBombError as exc:
+        raise _ParseError(str(exc)) from exc
+
+
+async def _deep_parse(
+    tmp_path: str, ext: str, settings: Settings
+) -> tuple[int | None, list[str] | None]:
     """Parse the downloaded file off the event loop; return (page_count, sheet_names).
 
+    OOXML files (.xlsx/.docx) are first checked against the decompression-bomb caps
+    (cheap central-directory inspection) before they are handed to a parser.
+
     Raises:
-        _ParseError: If the file cannot be parsed as its declared type.
+        _ParseError: If the file cannot be parsed as its declared type, or trips the
+            archive-safety limits.
     """
     try:
         if ext == ".pdf":
             return await anyio.to_thread.run_sync(extract_pdf_page_count, tmp_path), None
         if ext == ".xlsx":
+            await _assert_archive_safe(tmp_path, settings)
             return None, await anyio.to_thread.run_sync(extract_xlsx_sheet_names, tmp_path)
         if ext == ".docx":
+            await _assert_archive_safe(tmp_path, settings)
             await anyio.to_thread.run_sync(validate_docx, tmp_path)
             return None, None
+    except _ParseError:
+        raise  # already a clear, permanent failure (bad parse or zip bomb)
     except Exception as exc:
         raise _ParseError(f"File could not be parsed as {ext}: {exc}") from exc
     return None, None  # .xls: accepted as a stored blob (no parser available)
@@ -335,8 +374,29 @@ async def validate_stored_object(
                 sha256=None,
                 size_bytes=downloaded.size_bytes,
             )
+        scan = await scan_file(downloaded.path, settings)
+        if scan.error is not None:
+            # Scanner unreachable/failed: fail closed — never accept an unscanned file.
+            return ValidationOutcome(
+                ok=False,
+                transient=True,
+                failure_reason=f"Antivirus scan unavailable: {scan.error}"[:255],
+                page_count=None,
+                sheet_names=None,
+                sha256=None,
+                size_bytes=downloaded.size_bytes,
+            )
+        if not scan.clean:
+            return ValidationOutcome(
+                ok=False,
+                failure_reason=f"Malware detected: {scan.signature}"[:255],
+                page_count=None,
+                sheet_names=None,
+                sha256=None,
+                size_bytes=downloaded.size_bytes,
+            )
         try:
-            page_count, sheet_names = await _deep_parse(downloaded.path, ext)
+            page_count, sheet_names = await _deep_parse(downloaded.path, ext, settings)
         except _ParseError as exc:
             return ValidationOutcome(
                 ok=False,
@@ -477,3 +537,20 @@ async def recover_stuck_processing_documents(
             await run_document_validation(storage, doc_id)
         except Exception:
             logger.exception("failed to recover processing document %s", doc_id)
+
+
+async def run_recovery_loop(storage: AsyncStorageClient, *, settings: Settings) -> None:
+    """Periodically re-drive stuck ``processing`` documents until cancelled.
+
+    Sweeps immediately, then every ``RECOVERY_SWEEP_INTERVAL_S`` seconds. This is what
+    turns a steady-state transient failure (left ``processing`` for retry) into an
+    eventual resolution instead of waiting for the next restart. Each sweep's errors
+    are swallowed so the loop never dies; cancellation on app shutdown breaks out
+    cleanly via the cancellable ``anyio.sleep``.
+    """
+    while True:
+        try:
+            await recover_stuck_processing_documents(storage, settings=settings)
+        except Exception:
+            logger.exception("recovery sweep failed")
+        await anyio.sleep(settings.RECOVERY_SWEEP_INTERVAL_S)
