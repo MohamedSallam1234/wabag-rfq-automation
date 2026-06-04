@@ -29,6 +29,5 @@ class ProjectRead(BaseModel):
     consultant: str | None
     project_number: str | None
     capacity_m3d: int | None
-    owner_id: uuid.UUID
     created_at: datetime
     updated_at: datetime

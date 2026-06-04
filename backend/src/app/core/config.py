@@ -10,15 +10,9 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 AppEnv = Literal["local", "dev", "test", "prod"]
-JwtAlgorithm = Literal["ES256", "RS256"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 _SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[1] / "agents" / "llm" / "system_prompt.md"
-
-
-def _default_jwt_algorithms() -> list[JwtAlgorithm]:
-    """Return the default Supabase JWT signing algorithms."""
-    return ["ES256", "RS256"]
 
 
 def _default_system_rules() -> list[str]:
@@ -31,6 +25,10 @@ class Settings(BaseSettings):
     """Typed configuration sourced from dotenv files and the process environment."""
 
     model_config = SettingsConfigDict(
+        # APP_ENV selects which env-specific dotenv file to load. It is read from the OS
+        # environment (not from Settings) on purpose: this runs *before* Settings exists, so
+        # the selector cannot come from pydantic. In non-local deploys APP_ENV must be a real
+        # environment variable — one written *inside* .env.<env> can't select its own file.
         env_file=(".env", f".env.{os.getenv('APP_ENV', 'local')}"),
         env_file_encoding="utf-8",
         case_sensitive=True,
@@ -45,68 +43,32 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = Field(..., description="SQLAlchemy async DSN for the app database")
     MIGRATION_DATABASE_URL: str = Field(..., description="SQLAlchemy DSN for Alembic migrations")
+    # Consumed only by the initial migration to create the least-privilege app_user role.
+    # Optional so the running app (which connects via DATABASE_URL) boots without it; the
+    # migration raises a clear error if it is needed but unset.
+    APP_USER_PASSWORD: SecretStr = Field(default=SecretStr(""), repr=False)
 
-    # Supabase auth/storage
+    # Supabase storage
     SUPABASE_URL: str
-    SUPABASE_PUBLISHABLE_KEY: str = Field(
-        default="",
-        repr=False,
-        description="New publishable key; client-safe, unused by backend.",
-    )
     SUPABASE_SECRET_KEY: str = Field(
         ...,
         repr=False,
-        description="New secret key; server-side, bypasses RLS. Used by Storage client.",
+        description="Server-side secret key used by the Storage client.",
     )
-
-    # JWT verification
-    JWT_ALGORITHMS: Annotated[list[JwtAlgorithm], NoDecode] = Field(
-        default_factory=_default_jwt_algorithms,
-    )
-    JWT_AUDIENCE: str = "authenticated"
 
     # CORS
     CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # Document storage / upload (Supabase Storage)
     SUPABASE_STORAGE_BUCKET: str = "rfq-documents"
-    MAX_UPLOAD_SIZE_MB: int = 100
-    MAX_FILES_PER_PROJECT: int = 50
-    MAX_PROJECT_TOTAL_SIZE_MB: int = 1000
+    # Safety cap on the upload request body size (a guardrail, not a business quota).
+    # Kept at 50 to match the Supabase free-tier bucket file_size_limit.
+    MAX_UPLOAD_SIZE_MB: int = 50
     SIGNED_DOWNLOAD_URL_TTL_S: int = 600
-    DOWNLOAD_CHUNK_SIZE: int = 1024 * 1024
     STORAGE_CLIENT_TIMEOUT_S: int = 120
-    PENDING_UPLOAD_TTL_MIN: int = 60
-    # Computed during validation and stored on the document; reserved for future
-    # content dedup / integrity checks (no consumer yet — safe to disable to save the hash).
-    COMPUTE_SHA256: bool = True
-
-    # Background validation / recovery
-    VALIDATION_MAX_ATTEMPTS: int = 3
-    VALIDATION_RETRY_BACKOFF_S: float = 0.5
-    PROCESSING_RECOVERY_TTL_MIN: int = 15
-    # How often the lifespan re-drives documents stuck in `processing` (steady-state,
-    # not just at boot). See `run_recovery_loop`.
-    RECOVERY_SWEEP_INTERVAL_S: int = 300
     ALLOWED_UPLOAD_EXTENSIONS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [".pdf", ".docx", ".xlsx", ".xls"],
     )
-
-    # File-content safety (validation hardening)
-    # OOXML (.xlsx/.docx) are ZIP containers; a small upload can decompress to a huge
-    # payload. These caps are checked against the ZIP central directory (no extraction)
-    # before deep-parsing, rejecting decompression bombs.
-    MAX_DECOMPRESSED_SIZE_MB: int = 500
-    MAX_COMPRESSION_RATIO: int = 100
-    MAX_ARCHIVE_ENTRIES: int = 10000
-    # Opt-in ClamAV scanning of uploaded bytes during background validation. When
-    # enabled, a scanner error fails closed (the document is retried, never accepted
-    # unscanned). Configure either CLAMD_SOCKET (unix socket) or CLAMD_HOST/CLAMD_PORT.
-    AV_SCAN_ENABLED: bool = False
-    CLAMD_HOST: str = ""
-    CLAMD_PORT: int = 3310
-    CLAMD_SOCKET: str = ""
-    CLAMD_TIMEOUT_S: float = 30.0
 
     # LLM (OpenRouter — Claude Opus 4.7 primary, Sonnet 4.6 fallback)
     OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
@@ -145,14 +107,6 @@ class Settings(BaseSettings):
                 continue
             normalized.append(ext if ext.startswith(".") else f".{ext}")
         return normalized
-
-    @field_validator("JWT_ALGORITHMS", mode="before")
-    @classmethod
-    def _split_jwt_algorithms(cls, value: str | list[str]) -> list[str]:
-        """Turn a comma-separated env value into a list of accepted algorithms."""
-        if isinstance(value, str):
-            return [algorithm.strip() for algorithm in value.split(",") if algorithm.strip()]
-        return value
 
 
 @lru_cache

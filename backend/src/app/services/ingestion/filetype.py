@@ -8,7 +8,7 @@ disk are ZIP archives — both start with the same ZIP signature (``PK\x03\x04``
 Magic bytes therefore cannot, on their own, distinguish ``.docx`` from ``.xlsx``
 (or from a plain renamed ``.zip``). We do **not** accept ``.zip`` uploads; this
 check only confirms the broad container family. The authoritative distinction is
-the deep-parse step in :mod:`app.services.ingestion.upload` (``openpyxl`` for
+the deep-parse step in :mod:`app.services.ingestion.validation` (``openpyxl`` for
 ``.xlsx``, ``python-docx`` for ``.docx``, ``pypdf`` for ``.pdf``), which rejects a
 mismatched or disguised file by failing to parse it.
 """

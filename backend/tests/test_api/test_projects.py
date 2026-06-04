@@ -1,4 +1,4 @@
-"""Tests for the project endpoints (owner-scoped)."""
+"""Tests for the project endpoints (open — no authentication)."""
 
 import uuid
 from collections.abc import Iterator
@@ -9,7 +9,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
-from app.core.security import get_current_user
 from app.main import app
 from app.models.project import Project
 
@@ -34,11 +33,9 @@ def _make_session() -> MagicMock:
     return session
 
 
-def _make_project(owner_id: uuid.UUID) -> Project:
+def _make_project() -> Project:
     now = datetime.now(UTC)
-    return Project(
-        id=uuid.uuid4(), owner_id=owner_id, name="Kohafa WWTP", created_at=now, updated_at=now
-    )
+    return Project(id=uuid.uuid4(), name="Kohafa WWTP", created_at=now, updated_at=now)
 
 
 @pytest.fixture(autouse=True)
@@ -48,9 +45,7 @@ def _clear_overrides() -> Iterator[None]:
 
 
 def test_create_project() -> None:
-    owner = uuid.uuid4()
     session = _make_session()
-    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
     app.dependency_overrides[get_db] = lambda: session
 
     client = TestClient(app)
@@ -59,15 +54,13 @@ def test_create_project() -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["name"] == "Kohafa WWTP"
-    assert body["owner_id"] == str(owner)
+    assert "owner_id" not in body
     session.add.assert_called_once()
 
 
 def test_create_project_rejects_negative_capacity() -> None:
     """A negative capacity_m3d is rejected at the input boundary (422)."""
-    owner = uuid.uuid4()
     session = _make_session()
-    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
     app.dependency_overrides[get_db] = lambda: session
 
     client = TestClient(app)
@@ -77,14 +70,12 @@ def test_create_project_rejects_negative_capacity() -> None:
     session.add.assert_not_called()
 
 
-def test_list_projects_only_returns_callers() -> None:
-    owner = uuid.uuid4()
-    project = _make_project(owner)
+def test_list_projects() -> None:
+    project = _make_project()
     session = _make_session()
     result = MagicMock()
     result.scalars.return_value.all.return_value = [project]
     session.execute = AsyncMock(return_value=result)
-    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
     app.dependency_overrides[get_db] = lambda: session
 
     client = TestClient(app)
@@ -94,12 +85,10 @@ def test_list_projects_only_returns_callers() -> None:
     assert len(response.json()) == 1
 
 
-def test_get_project_owned() -> None:
-    owner = uuid.uuid4()
-    project = _make_project(owner)
+def test_get_project_found() -> None:
+    project = _make_project()
     session = _make_session()
     session.get = AsyncMock(return_value=project)
-    app.dependency_overrides[get_current_user] = lambda: {"sub": str(owner)}
     app.dependency_overrides[get_db] = lambda: session
 
     client = TestClient(app)
@@ -109,14 +98,12 @@ def test_get_project_owned() -> None:
     assert response.json()["id"] == str(project.id)
 
 
-def test_get_project_not_owned_returns_404() -> None:
-    project = _make_project(uuid.uuid4())
+def test_get_project_missing_returns_404() -> None:
     session = _make_session()
-    session.get = AsyncMock(return_value=project)
-    app.dependency_overrides[get_current_user] = lambda: {"sub": str(uuid.uuid4())}
+    session.get = AsyncMock(return_value=None)
     app.dependency_overrides[get_db] = lambda: session
 
     client = TestClient(app)
-    response = client.get(f"/api/v1/projects/{project.id}")
+    response = client.get(f"/api/v1/projects/{uuid.uuid4()}")
 
     assert response.status_code == 404

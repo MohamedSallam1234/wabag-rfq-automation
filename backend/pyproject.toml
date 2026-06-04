@@ -59,7 +59,6 @@ dependencies = [
     # === External Services ===
     "httpx>=0.28", # Modern async HTTP client for LLM APIs
     "openrouter>=0.9,<1.0", # Official OpenRouter Python SDK (beta — pinned to 0.x)
-    "clamd>=1.0", # ClamAV client for opt-in malware scanning of uploads (AV_SCAN_ENABLED)
     # === Report Generation ===
     # Tools for generating RFQ output documents
     "reportlab>=4.2", # PDF generation from templates
@@ -238,11 +237,6 @@ plugins = [# Third-party plugins
 # top-level ``foo`` across mypy versions, and the code does ``from openpyxl import ...``.
 [[tool.mypy.overrides]]
 module = ["openpyxl", "openpyxl.*"]
-ignore_missing_imports = true
-
-# clamd ships no type stubs; ignore its missing types (used for opt-in AV scanning).
-[[tool.mypy.overrides]]
-module = ["clamd", "clamd.*"]
 ignore_missing_imports = true
 
 # -----------------------------------------------------------------------------

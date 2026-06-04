@@ -27,21 +27,6 @@ class DocTypeSource(StrEnum):
     MANUAL = "manual"
 
 
-class DocumentStatus(StrEnum):
-    """Lifecycle of an uploaded document.
-
-    ``pending``: an upload URL was issued, awaiting the client's direct upload.
-    ``processing``: the object was uploaded and is being validated in the background.
-    ``ready``: validation passed; the file is usable.
-    ``failed``: validation failed; the storage object has been removed.
-    """
-
-    PENDING = "pending"
-    PROCESSING = "processing"
-    READY = "ready"
-    FAILED = "failed"
-
-
 class RetentionPolicy(StrEnum):
     """How long a document's bytes are kept in storage.
 
@@ -77,9 +62,6 @@ class Document(Base):
     storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger)
-    # Hex SHA-256 of the stored bytes; reserved for future content dedup / integrity
-    # (computed when COMPUTE_SHA256 is on, no consumer yet).
-    sha256: Mapped[str | None] = mapped_column(String(64))
     doc_type: Mapped[str | None] = mapped_column(String(64), index=True)
     doc_type_source: Mapped[DocTypeSource] = mapped_column(
         Enum(DocTypeSource, name="doc_type_source", values_callable=_enum_values),
@@ -90,22 +72,10 @@ class Document(Base):
     revision_number: Mapped[int | None] = mapped_column(Integer)
     page_count: Mapped[int | None] = mapped_column(Integer)
     sheet_names: Mapped[list[str] | None] = mapped_column(JSONB)
-    status: Mapped[DocumentStatus] = mapped_column(
-        Enum(DocumentStatus, name="document_status", values_callable=_enum_values),
-        nullable=False,
-        server_default=DocumentStatus.PENDING.value,
-    )
     retention: Mapped[RetentionPolicy] = mapped_column(
         Enum(RetentionPolicy, name="retention_policy", values_callable=_enum_values),
         nullable=False,
         server_default=RetentionPolicy.TRANSIENT.value,
-    )
-    failure_reason: Mapped[str | None] = mapped_column(String(255))
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

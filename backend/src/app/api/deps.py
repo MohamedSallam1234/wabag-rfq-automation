@@ -1,8 +1,8 @@
-"""Shared FastAPI dependencies (database session, LLM router, storage, authz)."""
+"""Shared FastAPI dependencies (database session, LLM router, storage, lookups)."""
 
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any, cast
+from typing import cast
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,52 +41,25 @@ def get_storage(request: Request) -> AsyncStorageClient:
     return cast(AsyncStorageClient, request.app.state.storage)
 
 
-def current_user_id(user: dict[str, Any]) -> uuid.UUID:
-    """Extract the Supabase user id (UUID) from decoded JWT claims.
+async def load_project_or_404(db: AsyncSession, project_id: uuid.UUID) -> Project:
+    """Load a project by id, or raise 404 if it does not exist.
 
     Raises:
-        HTTPException: 401 if the ``sub`` claim is missing or not a valid UUID
-            (a malformed token is an auth failure, not a server error).
+        HTTPException: 404 if the project is absent.
     """
-    try:
-        return uuid.UUID(str(user["sub"]))
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token") from exc
-
-
-async def load_owned_project(
-    db: AsyncSession, project_id: uuid.UUID, owner_id: uuid.UUID, *, for_update: bool = False
-) -> Project:
-    """Load a project owned by ``owner_id`` or raise 404 (also hides others' projects).
-
-    Args:
-        db: The active async database session.
-        project_id: The project to load.
-        owner_id: The current user; the project must belong to them.
-        for_update: When ``True``, lock the project row (``SELECT … FOR UPDATE``) so
-            concurrent uploads to the same project serialize their quota checks.
-
-    Raises:
-        HTTPException: 404 if the project is absent or owned by another user.
-    """
-    project = await db.get(Project, project_id, with_for_update=for_update or None)
-    if project is None or project.owner_id != owner_id:
+    project = await db.get(Project, project_id)
+    if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
     return project
 
 
-async def load_owned_document(
-    db: AsyncSession, document_id: uuid.UUID, owner_id: uuid.UUID
-) -> Document:
-    """Load a document whose parent project is owned by ``owner_id`` or raise 404.
+async def load_document_or_404(db: AsyncSession, document_id: uuid.UUID) -> Document:
+    """Load a document by id, or raise 404 if it does not exist.
 
     Raises:
-        HTTPException: 404 if the document is absent or not owned by this user.
+        HTTPException: 404 if the document is absent.
     """
     document = await db.get(Document, document_id)
     if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
-    project = await db.get(Project, document.project_id)
-    if project is None or project.owner_id != owner_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     return document

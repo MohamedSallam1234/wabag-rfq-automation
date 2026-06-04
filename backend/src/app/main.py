@@ -1,7 +1,6 @@
 """FastAPI app factory: lifespan-managed OpenRouter SDK client + LLM router wiring."""
 
-import asyncio
-import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -15,13 +14,19 @@ from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.database import ping_db
 from app.core.supabase import create_supabase_client
-from app.services.ingestion.upload import run_recovery_loop
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create the process-wide OpenRouter SDK client, LLM router, and Supabase client."""
     settings = get_settings()
+    # Apply the configured log level (so LOG_LEVEL actually takes effect) and surface the
+    # resolved environment on the first log line — if a deploy loaded the wrong .env file
+    # (e.g. APP_ENV was not set in the OS environment), this will read "local" in production.
+    logging.basicConfig(level=settings.LOG_LEVEL)
+    logger.info("starting up: APP_ENV=%s, DEBUG=%s", settings.APP_ENV, settings.DEBUG)
     async with OpenRouter(
         api_key=settings.OPENROUTER_API_KEY.get_secret_value(),
     ) as open_router:
@@ -30,17 +35,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         supabase = await create_supabase_client(settings)
         app.state.supabase = supabase
         app.state.storage = supabase.storage
-        # Periodically re-drive documents stuck in `processing` (crash/restart or a
-        # transient validation failure left for retry). Runs off the boot path so a
-        # slow/unreachable storage layer never blocks startup; cancelled on shutdown.
-        recovery_task = asyncio.create_task(run_recovery_loop(supabase.storage, settings=settings))
-        app.state.recovery_task = recovery_task
         try:
             yield
         finally:
-            recovery_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await recovery_task
             await supabase.storage.session.aclose()
 
 

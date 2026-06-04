@@ -3,17 +3,10 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from app.models.document import DocTypeSource, DocumentStatus, RetentionPolicy
+from app.models.document import DocTypeSource, RetentionPolicy
 from app.services.ingestion.classifier import DocType
-
-
-class DocumentInitRequest(BaseModel):
-    """Payload to begin a direct-to-storage upload."""
-
-    filename: str = Field(min_length=1, max_length=512)
-    size_bytes: int = Field(gt=0, description="Client-declared file size in bytes")
 
 
 class DocumentRead(BaseModel):
@@ -26,28 +19,15 @@ class DocumentRead(BaseModel):
     original_filename: str
     content_type: str
     size_bytes: int | None
-    sha256: str | None
     doc_type: str | None
     doc_type_source: DocTypeSource
     revision_label: str | None
     revision_number: int | None
     page_count: int | None
     sheet_names: list[str] | None
-    status: DocumentStatus
     retention: RetentionPolicy
-    failure_reason: str | None
-    uploaded_by: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
-
-
-class DocumentInitResponse(BaseModel):
-    """Response to an upload-init call: the pending document plus where to PUT the bytes."""
-
-    document: DocumentRead
-    upload_url: str
-    token: str
-    storage_path: str
 
 
 class DocumentDetail(DocumentRead):
