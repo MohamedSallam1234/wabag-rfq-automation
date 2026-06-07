@@ -20,7 +20,7 @@ from app.schemas.document import (
     DocumentRead,
 )
 from app.services.ingestion.classifier import classify_filename, retention_for
-from app.services.ingestion.filetype import canonical_content_type, normalize_extension
+from app.services.ingestion.filetype import normalize_extension
 from app.services.ingestion.validation import (
     UploadValidationError,
     plan_storage_path,
@@ -34,8 +34,6 @@ router = APIRouter(prefix="/api/v1", tags=["documents"])
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 Storage = Annotated[AsyncStorageClient, Depends(get_storage)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
-
-_FALLBACK_CONTENT_TYPE = "application/octet-stream"
 
 
 @router.post(
@@ -54,8 +52,9 @@ async def upload_document(
 
     A single synchronous step. The client POSTs the file; the backend validates the
     extension and content (magic bytes + deep parse), uploads the validated bytes to
-    Supabase Storage, classifies the filename, and returns the created document. Invalid
-    files are rejected (415 / 422 / 413) and nothing is stored.
+    Supabase Storage, classifies the filename, and returns the created document. Born-digital
+    PDFs are slimmed to a Markdown artifact (text + tables) and stored as ``.md`` — the heavy
+    original is discarded. Invalid files are rejected (415 / 422 / 413) and nothing is stored.
     """
     filename = file.filename or ""
     ext = normalize_extension(filename)
@@ -73,18 +72,19 @@ async def upload_document(
     except UploadValidationError as exc:
         raise HTTPException(exc.status_code, exc.detail) from exc
 
+    # Classification runs on the original filename (e.g. the ``*.pdf`` name), not the stored
+    # ``.md`` object, so the prefix and *DataSheet*/*Specs* rules still fire.
     classification = classify_filename(filename)
-    content_type = canonical_content_type(ext) or _FALLBACK_CONTENT_TYPE
     document_id = uuid.uuid4()
     bucket = settings.SUPABASE_STORAGE_BUCKET
-    storage_path = plan_storage_path(project.id, document_id, ext)
+    storage_path = plan_storage_path(project.id, document_id, validated.stored_ext)
 
     # Store the validated bytes first; only persist the row if the upload succeeds (a row
     # with no object would be unusable). The reverse gap — a DB failure after a successful
     # upload — leaves a rare orphan object, an accepted simplification.
     try:
         await storage.from_(bucket).upload(
-            storage_path, validated.data, {"content-type": content_type}
+            storage_path, validated.data, {"content-type": validated.content_type}
         )
     except StorageException as exc:
         logger.warning("failed to store object %s: %s", storage_path, exc)
@@ -98,7 +98,7 @@ async def upload_document(
         original_filename=filename,
         storage_bucket=bucket,
         storage_path=storage_path,
-        content_type=content_type,
+        content_type=validated.content_type,
         size_bytes=validated.size_bytes,
         page_count=validated.page_count,
         sheet_names=validated.sheet_names,

@@ -18,6 +18,10 @@ classification checks, and the failure scenarios.
   Storage, classifies the filename, and returns the created document — all synchronously. A
   `201` means *validated and stored*; a `4xx` means *nothing was stored*. There is no
   `init`/`finalize`, no direct-to-Supabase PUT, and no polling.
+- **PDFs are converted to Markdown.** A born-digital PDF is slimmed to a `.md` artifact (text +
+  tables) at upload and only that is stored (`content_type=text/markdown`); the original is
+  discarded. So the `download_url` for a PDF serves Markdown, not a PDF. Scanned/image-only PDFs
+  are rejected `422` (no OCR). `.docx/.xlsx/.xls` are still stored as-is.
 - **The secret key** (`sb_secret_…`, in `backend/.env` as `SUPABASE_SECRET_KEY`) is used only
   by the backend to talk to Supabase Storage — never sent by a client.
 
@@ -55,18 +59,21 @@ PROJECT_ID=$(curl -s -X POST "$BASE/api/v1/projects" \
   -d '{"name":"Kohafa WWTP","client":"WABAG"}' | jq -r .id)
 
 # 3.2 Upload a document (multipart, field "file")  → 201, classified, bytes stored
+#     Use a born-digital PDF (real text, not a scan). It is slimmed to a Markdown artifact.
 curl -s -X POST "$BASE/api/v1/projects/$PROJECT_ID/documents" \
   -F "file=@01_Employer_Technical_Specifications_Rev02.pdf;type=application/pdf" | jq
 
 # Expect: doc_type="Employer Technical Specifications", revision_number=2,
-#         retention="persistent", page_count set, doc_type_source="auto".
+#         retention="persistent", page_count set, doc_type_source="auto",
+#         and content_type="text/markdown" (the PDF was converted; the original is discarded).
 
 # 3.3 List the project's documents (newest first)  → 200
 curl -s "$BASE/api/v1/projects/$PROJECT_ID/documents" | jq
 
-# 3.4 Fetch detail + a signed download URL  → 200
+# 3.4 Fetch detail + a signed download URL  → 200. For a PDF the URL serves the .md artifact:
 DOC_ID=$(curl -s "$BASE/api/v1/projects/$PROJECT_ID/documents" | jq -r '.[0].id')
-curl -s "$BASE/api/v1/documents/$DOC_ID" | jq .download_url
+DL=$(curl -s "$BASE/api/v1/documents/$DOC_ID" | jq -r .download_url)
+curl -s "$DL" | head -40   # Markdown: paragraphs + GFM tables (| --- |), far smaller than the PDF
 
 # 3.5 Delete (also best-effort removes the storage object)  → 204
 curl -s -o /dev/null -w "%{http_code}\n" -X DELETE "$BASE/api/v1/documents/$DOC_ID"
@@ -115,7 +122,9 @@ The upload is synchronous, so failures come back immediately and **nothing is st
 | content ≠ extension | upload XLSX bytes named `report.pdf` | **422** "File content is not a valid .pdf file" (magic-byte gate) |
 | disguised OOXML | upload XLSX bytes named `spec.docx` | **422** "could not be parsed as .docx …" (magic matches OOXML; the **deep parse** catches it) |
 | unparseable | upload a `.txt` renamed `broken.pdf` | **422** "not a valid .pdf file" |
-| oversized | upload a file larger than `MAX_UPLOAD_SIZE_MB` | **413** |
+| scanned PDF | upload an image-only / scanned PDF (no text layer) | **422** "PDF has no extractable text …" (no OCR; born-digital only) |
+| oversized body | upload a file larger than `MAX_UPLOAD_SIZE_MB` | **413** |
+| oversized artifact | upload a non-PDF larger than `MAX_STORED_ARTIFACT_MB` | **413** |
 | missing project | upload to a random `project_id` | **404** |
 | missing document | `GET …/documents/<random uuid>` | **404** |
 | bad override | `PATCH … {"doc_type":"Nonsense"}` | **422** (not a known label) |

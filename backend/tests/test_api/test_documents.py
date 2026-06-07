@@ -10,6 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from pypdf import PdfWriter
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Table, TableStyle
 from storage3.utils import StorageException
 
 from app.api.deps import get_db, get_storage
@@ -25,11 +29,30 @@ _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # File-fixture builders (valid, parseable office files)
 # --------------------------------------------------------------------------- #
 def _pdf_bytes(pages: int = 1) -> bytes:
+    """A textless (blank) PDF — stands in for a scanned / image-only document."""
     writer = PdfWriter()
     for _ in range(pages):
         writer.add_blank_page(width=72, height=72)
     buffer = io.BytesIO()
     writer.write(buffer)
+    return buffer.getvalue()
+
+
+def _text_table_pdf_bytes(pages: int = 1) -> bytes:
+    """A born-digital PDF with a paragraph and a bordered table on each page."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story: list[object] = []
+    for i in range(pages):
+        story.append(Paragraph("Equipment specification for centrifugal pumps.", styles["Normal"]))
+        rows = [["Tag", "Description", "Qty"], ["P-101", "Centrifugal pump", "2"]]
+        table = Table(rows)
+        table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 1, colors.black)]))
+        story.append(table)
+        if i < pages - 1:
+            story.append(PageBreak())
+    doc.build(story)
     return buffer.getvalue()
 
 
@@ -114,20 +137,32 @@ def test_upload_pdf_returns_201_classified_with_page_count() -> None:
     app.dependency_overrides[get_storage] = lambda: storage
 
     client = TestClient(app)
+    pdf = _text_table_pdf_bytes(pages=3)
     response = client.post(
         f"/api/v1/projects/{project.id}/documents",
-        files={"file": ("01_Employer_Spec_Rev02.pdf", _pdf_bytes(pages=3), "application/pdf")},
+        files={"file": ("01_Employer_Spec_Rev02.pdf", pdf, "application/pdf")},
     )
 
     assert response.status_code == 201
     body = response.json()
+    # Classification still runs on the original .pdf filename.
     assert body["doc_type"] == "Employer Technical Specifications"
     assert body["doc_type_source"] == "auto"
     assert body["revision_number"] == 2
     assert body["retention"] == "persistent"
     assert body["page_count"] == 3
+    assert body["content_type"] == "text/markdown"
     proxy.upload.assert_awaited_once()
     session.add.assert_called_once()
+
+    # The stored object is a .md artifact holding the extracted text + Markdown table.
+    stored_path, stored_bytes, stored_opts = proxy.upload.call_args.args
+    assert stored_path.endswith(".md")
+    assert stored_opts == {"content-type": "text/markdown"}
+    assert not stored_bytes.startswith(b"%PDF-")
+    text = stored_bytes.decode("utf-8")
+    assert "P-101" in text  # table cell preserved
+    assert "---" in text  # GFM table separator
 
 
 def test_upload_xlsx_returns_201_with_sheet_names() -> None:
@@ -250,12 +285,33 @@ def test_upload_storage_failure_returns_502_and_persists_nothing() -> None:
     app.dependency_overrides[get_storage] = lambda: storage
 
     client = TestClient(app)
+    # A text+table PDF passes validation and reaches storage (a blank PDF would 422 first).
     response = client.post(
         f"/api/v1/projects/{project.id}/documents",
-        files={"file": ("01_Spec_Rev01.pdf", _pdf_bytes(pages=1), "application/pdf")},
+        files={"file": ("01_Spec_Rev01.pdf", _text_table_pdf_bytes(pages=1), "application/pdf")},
     )
     assert response.status_code == 502
     session.add.assert_not_called()  # nothing persisted when storage fails
+
+
+def test_upload_scanned_pdf_returns_422_and_stores_nothing() -> None:
+    """A textless (scanned / image-only) PDF is rejected 422 before anything is stored."""
+    project = _make_project()
+    session = _make_session()
+    session.get = AsyncMock(return_value=project)
+    storage, proxy = _make_storage()
+
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[get_storage] = lambda: storage
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/projects/{project.id}/documents",
+        files={"file": ("scanned.pdf", _pdf_bytes(pages=1), "application/pdf")},
+    )
+    assert response.status_code == 422
+    proxy.upload.assert_not_awaited()
+    session.add.assert_not_called()
 
 
 def test_upload_to_missing_project_returns_404() -> None:

@@ -99,7 +99,8 @@ def test_settings_storage_defaults() -> None:
         SUPABASE_SECRET_KEY="service",  # pragma: allowlist secret
     )
 
-    assert settings.MAX_UPLOAD_SIZE_MB == 50
+    assert settings.MAX_UPLOAD_SIZE_MB == 300  # incoming body cap (PDFs slimmed before storage)
+    assert settings.MAX_STORED_ARTIFACT_MB == 50  # stored cap (Supabase free-tier limit)
     assert settings.SUPABASE_STORAGE_BUCKET == "rfq-documents"
     assert settings.SIGNED_DOWNLOAD_URL_TTL_S == 600
     assert settings.ALLOWED_UPLOAD_EXTENSIONS == [".pdf", ".docx", ".xlsx", ".xls"]

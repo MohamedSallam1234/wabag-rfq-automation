@@ -61,9 +61,13 @@ class Settings(BaseSettings):
 
     # Document storage / upload (Supabase Storage)
     SUPABASE_STORAGE_BUCKET: str = "rfq-documents"
-    # Safety cap on the upload request body size (a guardrail, not a business quota).
+    # Cap on the incoming request *body* size (a guardrail, not a business quota). This can be
+    # generous because born-digital PDFs are slimmed to Markdown and the heavy original is
+    # discarded — only MAX_STORED_ARTIFACT_MB ever reaches the bucket.
+    MAX_UPLOAD_SIZE_MB: int = 300
+    # Cap on the final *stored* artifact (the .md for PDFs, the original for other types).
     # Kept at 50 to match the Supabase free-tier bucket file_size_limit.
-    MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_STORED_ARTIFACT_MB: int = 50
     SIGNED_DOWNLOAD_URL_TTL_S: int = 600
     STORAGE_CLIENT_TIMEOUT_S: int = 120
     ALLOWED_UPLOAD_EXTENSIONS: Annotated[list[str], NoDecode] = Field(
