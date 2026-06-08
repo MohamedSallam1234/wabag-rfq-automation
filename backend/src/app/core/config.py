@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-AppEnv = Literal["local", "dev", "test", "prod", "production"]
+AppEnv = Literal["local", "dev", "test", "prod"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 _SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[1] / "agents" / "llm" / "system_prompt.md"
@@ -110,6 +110,8 @@ class Settings(BaseSettings):
             if not ext:
                 continue
             normalized.append(ext if ext.startswith(".") else f".{ext}")
+        if not normalized:
+            raise ValueError("ALLOWED_UPLOAD_EXTENSIONS must contain at least one extension")
         return normalized
 
 
