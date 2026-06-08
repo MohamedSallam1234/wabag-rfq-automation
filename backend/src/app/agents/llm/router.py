@@ -18,6 +18,7 @@ from app.core.config import Settings
 logger = logging.getLogger(__name__)
 
 _HTTP_CLIENT_ERROR = 400
+_HTTP_REQUEST_TIMEOUT = 408
 _HTTP_RATE_LIMITED = 429
 _HTTP_SERVER_ERROR = 500
 
@@ -97,7 +98,10 @@ class ClaudeClient:
             )
         except OpenRouterError as exc:
             status = exc.status_code
-            if status == _HTTP_RATE_LIMITED or status >= _HTTP_SERVER_ERROR:
+            if (
+                status in {_HTTP_RATE_LIMITED, _HTTP_REQUEST_TIMEOUT}
+                or status >= _HTTP_SERVER_ERROR
+            ):
                 raise LLMTransientError(
                     f"{self._model} returned {status}: {exc.body[:200]}"
                 ) from exc

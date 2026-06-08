@@ -148,4 +148,3 @@ def downgrade() -> None:
     op.drop_table('projects')
     op.execute('DROP TYPE IF EXISTS retention_policy')
     op.execute('DROP TYPE IF EXISTS doc_type_source')
-    op.execute('DROP ROLE IF EXISTS app_user')

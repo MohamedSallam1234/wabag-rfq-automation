@@ -1,5 +1,6 @@
 """FastAPI app factory: lifespan-managed OpenRouter SDK client + LLM router wiring."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -61,7 +62,7 @@ def create_app() -> FastAPI:
     async def ready() -> dict[str, str]:
         """Readiness probe: the database is reachable (storage is wired at startup)."""
         try:
-            await ping_db()
+            await asyncio.wait_for(ping_db(), timeout=5)
         except Exception as exc:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database not ready") from exc
         return {"status": "ready"}

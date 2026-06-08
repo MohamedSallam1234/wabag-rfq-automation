@@ -8,15 +8,15 @@ and falls back from Opus to Sonnet on transient failures.
 
 ## 1. What was built
 
-| File | Purpose |
-|---|---|
-| `src/app/core/config.py` | Adds `OPENROUTER_API_KEY`, `PRIMARY_MODEL`, `FALLBACK_MODEL`, `LLM_TIMEOUT_S`, and the env-overridable `SYSTEM_RULES` (the F-04 rule list) to the typed `Settings`. |
-| `src/app/agents/llm/router.py` | Single-file LLM module: `build_system_prompt`, `ClaudeClient`, `LLMRouter`, `build_router`, and the two exception types. |
-| `src/app/api/deps.py` | New `get_router()` FastAPI dependency that returns the process-wide router. |
-| `src/app/main.py` | `lifespan` that creates **one** shared `OpenRouter` SDK client + `LLMRouter` and stashes them on `app.state`, plus a `GET /llm/ping` smoke endpoint. |
-| `tests/test_agents/test_llm_router.py` | Tests mock `chat.send_async` with `AsyncMock` — no real network. |
-| `tests/test_core/test_config.py` | Adds tests for `SYSTEM_RULES` parsing and defaults (env var holds the F-04 rule list). |
-| `.env.example` | Documents the new LLM env vars. |
+| File                                   | Purpose                                                                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/core/config.py`               | Adds `OPENROUTER_API_KEY`, `PRIMARY_MODEL`, `FALLBACK_MODEL`, `LLM_TIMEOUT_S`, and the env-overridable `SYSTEM_RULES` (the F-04 rule list) to the typed `Settings`. |
+| `src/app/agents/llm/router.py`         | Single-file LLM module: `build_system_prompt`, `ClaudeClient`, `LLMRouter`, `build_router`, and the two exception types.                                            |
+| `src/app/api/deps.py`                  | New `get_router()` FastAPI dependency that returns the process-wide router.                                                                                         |
+| `src/app/main.py`                      | `lifespan` that creates **one** shared `OpenRouter` SDK client + `LLMRouter` and stashes them on `app.state`, plus a `GET /llm/ping` smoke endpoint.                |
+| `tests/test_agents/test_llm_router.py` | Tests mock `chat.send_async` with `AsyncMock` — no real network.                                                                                                    |
+| `tests/test_core/test_config.py`       | Adds tests for `SYSTEM_RULES` parsing and defaults (env var holds the F-04 rule list).                                                                              |
+| `.env.example`                         | Documents the new LLM env vars.                                                                                                                                     |
 
 ### Architecture in one picture
 
@@ -46,8 +46,7 @@ and falls back from Opus to Sonnet on transient failures.
    override it. F-04 rules are guaranteed to be present on every call.
 2. **F-04 rules are injected via `messages[0]` (the system message)**, which
    drives model behavior. Per-request audit metadata (e.g. `ruleset`, `rfq_id`)
-   is not currently forwarded to OpenRouter; the `rfq_id` parameter on
-   `ask()` is reserved for future audit wiring.
+   is not currently forwarded to OpenRouter.
 3. **Rules are configurable via env**: set `SYSTEM_RULES` in `.env` as a
    pipe-separated string (the rules are the F-04 AI Operating Rules, named
    generically in the config so future non-F-04 rules can reuse the slot).
@@ -56,7 +55,7 @@ and falls back from Opus to Sonnet on transient failures.
 4. **Fatal vs. transient error mapping**:
    - Timeouts, transport errors, 429, 5xx → `LLMTransientError` → router tries fallback.
    - 400 / 401 / 404 / other 4xx → `LLMFatalError` → re-raised immediately.
-   A 400 from Opus would be a 400 from Sonnet too — don't waste tokens on caller bugs.
+     A 400 from Opus would be a 400 from Sonnet too — don't waste tokens on caller bugs.
 5. **One shared `OpenRouter` SDK client for the whole app**, created in
    `lifespan` (entered as an async context manager) and reused for every
    request. The SDK owns its own httpx connection pool; per-request clients
@@ -214,13 +213,12 @@ async def handler(llm: Annotated[LLMRouter, Depends(get_router)]) -> dict[str, s
     content = await llm.ask(
         user_message="raw user text or extracted document text",
         task_instructions="Extract X and return JSON with fields a, b, c.",
-        rfq_id="RFQ-123",  # optional but recommended for audit
     )
     return {"content": content}
 ```
 
 From a service / non-endpoint context (e.g. a background worker), call
-`build_router(settings, http_client)` once at startup and pass the router
+`build_router(settings, open_router)` once at startup and pass the router
 around — do **not** call it per-request.
 
 ### What `ask()` returns
@@ -233,10 +231,10 @@ it.
 
 ### What `ask()` raises
 
-| Exception | When | Should you retry? |
-|---|---|---|
-| `LLMTransientError` | Both Opus and Sonnet failed transiently | Maybe — surface as 503 to the caller |
-| `LLMFatalError` | Either model returned 4xx (excluding 429) | No — your prompt or auth is broken |
+| Exception           | When                                      | Should you retry?                    |
+| ------------------- | ----------------------------------------- | ------------------------------------ |
+| `LLMTransientError` | Both Opus and Sonnet failed transiently   | Maybe — surface as 503 to the caller |
+| `LLMFatalError`     | Either model returned 4xx (excluding 429) | No — your prompt or auth is broken   |
 
 The router has already attempted the fallback before raising. Don't re-wrap in
 your own retry loop.

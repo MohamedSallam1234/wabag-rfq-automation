@@ -32,6 +32,6 @@ async def create_supabase_client(settings: Settings) -> AsyncClient:
     """
     return await acreate_client(
         settings.SUPABASE_URL,
-        settings.SUPABASE_SECRET_KEY,
+        settings.SUPABASE_SECRET_KEY.get_secret_value(),
         options=AsyncClientOptions(storage_client_timeout=settings.STORAGE_CLIENT_TIMEOUT_S),
     )

@@ -498,7 +498,7 @@ uv run bandit -c pyproject.toml -r src
 
 | Risk | How it's handled |
 |---|---|
-| Large/oversized upload exhausts RAM | Streamed to a temp file in 1 MB chunks; the size cap aborts early (`413`); peak memory ≈ the (capped) file size. |
+| Large/oversized upload exhausts RAM | The body is streamed to a temp file in 1 MB chunks (incoming cap aborts early at `413`), so the upload itself is RAM-bounded. The deep parse then loads the validated artifact back into memory, so peak RAM ≈ the **stored-artifact** cap (`MAX_STORED_ARTIFACT_MB`), not the larger incoming cap. |
 | `app_user` lacks DML on new tables → "permission denied" | Migration emits an explicit `GRANT … TO app_user` (guarded by a role-existence check). |
 | Content ≠ declared type (`.zip`/`.docx` renamed `.xlsx`, garbage `.pdf`) | Magic-byte gate (`422`) then the authoritative deep parse (`422`); nothing is stored. |
 | Storage object orphaned when an upload-then-DB-failure occurs | Rare; the upload happens before the insert, and a post-upload DB error is logged so the orphan is observable. |
@@ -534,7 +534,7 @@ background validation task, and the recovery loop entirely.
 
 **Q: Can a renamed `.zip` (or a `.docx` saved as `.xlsx`) sneak through?**
 A: No. Magic bytes can't tell OOXML files apart (they're all ZIP), but the deep parse can:
-`openpyxl`/`python-docx`/`pypdf` fail on the wrong/garbage content, the upload returns `422`,
+`openpyxl`/`python-docx`/`PyMuPDF` fail on the wrong/garbage content, the upload returns `422`,
 and nothing is stored.
 
 **Q: Why is classification not done by the LLM?**

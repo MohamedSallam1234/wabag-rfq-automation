@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-AppEnv = Literal["local", "dev", "test", "prod"]
+AppEnv = Literal["local", "dev", "test", "prod", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 _SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[1] / "agents" / "llm" / "system_prompt.md"
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # Supabase storage
     SUPABASE_URL: str
-    SUPABASE_SECRET_KEY: str = Field(
+    SUPABASE_SECRET_KEY: SecretStr = Field(
         ...,
         repr=False,
         description="Server-side secret key used by the Storage client.",
