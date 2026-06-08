@@ -13,6 +13,7 @@ the Supabase bucket ``file_size_limit`` and is checked against the final stored 
 """
 
 import contextlib
+import logging
 import os
 import tempfile
 import uuid
@@ -30,6 +31,8 @@ from app.services.ingestion.filetype import (
 )
 from app.services.ingestion.pdf_text import NoExtractableTextError, extract_pdf_markdown
 from app.services.ingestion.word_parser import validate_docx
+
+logger = logging.getLogger(__name__)
 
 _BYTES_PER_MB = 1024 * 1024
 _READ_CHUNK_SIZE = 1024 * 1024
@@ -86,7 +89,8 @@ async def _parse_office_metadata(tmp_path: str, ext: str) -> tuple[int | None, l
             await anyio.to_thread.run_sync(validate_docx, tmp_path)
             return None, None
     except Exception as exc:
-        raise UploadValidationError(422, f"File could not be parsed as {ext}: {exc}") from exc
+        logger.exception("Office parse failed for %s upload", ext)
+        raise UploadValidationError(422, f"File could not be parsed as {ext}") from exc
     return None, None  # .xls: accepted as a stored blob (no parser available)
 
 
@@ -107,7 +111,8 @@ async def _slim_pdf(tmp_path: str) -> tuple[bytes, int]:
             "Upload a text-based PDF or the original source file (e.g. the Word/Excel document).",
         ) from exc
     except Exception as exc:
-        raise UploadValidationError(422, f"File could not be parsed as .pdf: {exc}") from exc
+        logger.exception("PDF parse failed")
+        raise UploadValidationError(422, "File could not be parsed as .pdf") from exc
     return markdown.encode("utf-8"), page_count
 
 
