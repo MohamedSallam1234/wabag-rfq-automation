@@ -76,7 +76,7 @@ class Settings(BaseSettings):
 
     # LLM (OpenRouter — Claude Opus 4.7 primary, Sonnet 4.6 fallback)
     OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
-    PRIMARY_MODEL: str = "anthropic/claude-opus-4.7"
+    PRIMARY_MODEL: str = "anthropic/claude-opus-4.8"
     FALLBACK_MODEL: str = "anthropic/claude-sonnet-4.6"
     LLM_TIMEOUT_S: float = 60.0
     SYSTEM_RULES: Annotated[list[str], NoDecode] = Field(
