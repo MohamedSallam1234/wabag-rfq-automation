@@ -52,12 +52,19 @@ dependencies = [
     "alembic>=1.14", # Database migrations
     # === Document Processing ===
     # Libraries for handling RFQ documents in various formats
-    "pypdf>=5.4", # PDF text extraction and manipulation
+    # PDF → Markdown (text + tables) at upload, to slim huge employer specs for the LLM.
+    # NOTE: pymupdf4llm + its PyMuPDF backend are AGPL-3.0 — acceptable for this internal-only
+    # tool (no external distribution / public SaaS); revisit if that ever changes.
+    # Pinned to the lightweight 0.0.x line: it is pure-Python text + table extraction (~1000
+    # pages in seconds). The 1.27.x line bundles an ONNX layout model (pymupdf-layout) that runs
+    # at ~300 ms/page, which makes large specs effectively hang. We do NOT want that here.
+    "pymupdf4llm>=0.0.17,<0.1",
     "python-docx>=1.1", # Microsoft Word document processing
     "openpyxl>=3.1", # Excel spreadsheet reading/writing
     "pillow>=11.1", # Image processing (for scanned documents)
     # === External Services ===
     "httpx>=0.28", # Modern async HTTP client for LLM APIs
+    "openrouter>=0.9,<1.0", # Official OpenRouter Python SDK (beta — pinned to 0.x)
     # === Report Generation ===
     # Tools for generating RFQ output documents
     "reportlab>=4.2", # PDF generation from templates
@@ -82,6 +89,7 @@ dev = [
     "pytest>=8.3", # Main testing framework
     "pytest-asyncio>=0.25", # Async test support (for FastAPI endpoints)
     "pytest-cov>=6.1", # Coverage reporting
+    "pypdf>=5.4", # Builds blank/textless PDF fixtures in tests (prod PDF handling uses PyMuPDF)
     # === Code Quality ===
     "ruff>=0.9", # Fast linter and formatter (replaces flake8, black, isort)
     "mypy>=1.14", # Static type checker
@@ -174,6 +182,8 @@ ignore = [
     "D", # Don't require docstrings in tests
     "ANN", # Don't require type annotations in tests
     "S101", # Allow assert in tests
+    "S105", # Fake tokens/secrets are fine in test fixtures
+    "S106",
     "ARG", # Unused fixtures are normal in pytest
     "PLR2004", # Magic values are fine in tests (assert x == 42)
 ]
@@ -185,6 +195,11 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"               # Use Google-style docstrings
+
+[tool.ruff.lint.pylint]
+# FastAPI route handlers commonly inject several dependencies (db, storage,
+# settings, current user) alongside path/body params.
+max-args = 8
 
 # --- Formatter Settings ---
 [tool.ruff.format]
@@ -213,6 +228,9 @@ no_implicit_optional = true         # Require Optional[X] instead of X = None
 warn_redundant_casts = true         # Warn about unnecessary type casts
 warn_unused_ignores = true          # Warn about unused # type: ignore comments
 show_error_codes = true             # Show error codes (for ignore targeting)
+# PyMuPDF ships partial type hints (typed return values, but unannotated function bodies), so
+# calling pymupdf.open()/Document.close() trips disallow_untyped_calls. Allow calls into it.
+untyped_calls_exclude = ["pymupdf"]
 warn_unreachable = true             # Warn about unreachable code (dead code)
 enable_error_code = [# Enable specific error codes
     "ignore-without-code", # Require error codes in type: ignore
@@ -223,6 +241,19 @@ plugins = [# Third-party plugins
     "pydantic.mypy", # Pydantic model support
     "sqlalchemy.ext.mypy.plugin", # SQLAlchemy ORM support
 ]
+
+# openpyxl ships no type information (no py.typed); ignore its missing stubs. Both the
+# root module and submodules are listed because ``foo.*`` does not reliably match the
+# top-level ``foo`` across mypy versions, and the code does ``from openpyxl import ...``.
+[[tool.mypy.overrides]]
+module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true
+
+# PyMuPDF / pymupdf4llm ship no type information; ignore their missing stubs. Submodules and
+# the legacy ``fitz`` alias are listed alongside the top-level names (see the openpyxl note).
+[[tool.mypy.overrides]]
+module = ["pymupdf", "pymupdf.*", "pymupdf4llm", "pymupdf4llm.*", "fitz", "fitz.*"]
+ignore_missing_imports = true
 
 # -----------------------------------------------------------------------------
 # [BANDIT] - Python Security Linter Configuration

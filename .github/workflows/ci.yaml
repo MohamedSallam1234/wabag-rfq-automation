@@ -10,9 +10,8 @@ env:
   PYTHON_VERSION: "3.12"
   # Supabase test configuration (local test values)
   SUPABASE_URL: http://localhost:54321
-  SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test
-  SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test
-  SUPABASE_JWT_SECRET: test-secret  # pragma: allowlist secret
+  SUPABASE_PUBLISHABLE_KEY: sb_publishable_test  # pragma: allowlist secret
+  SUPABASE_SECRET_KEY: sb_secret_test  # pragma: allowlist secret
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:54322/test
   MIGRATION_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:54322/test
 

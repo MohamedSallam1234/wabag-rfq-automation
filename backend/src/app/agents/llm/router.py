@@ -1,19 +1,24 @@
-"""LLM provider layer: F-04 rules, OpenRouter Claude client, and primary/fallback router."""
+"""LLM provider layer: F-04 rules, OpenRouter SDK client, and primary/fallback router."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import httpx
+from openrouter import OpenRouter
+from openrouter.components import (
+    ChatMessagesTypedDict,
+    ChatSystemMessageTypedDict,
+    ChatUserMessageTypedDict,
+)
+from openrouter.errors import NoResponseError, OpenRouterError
 
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-
 _HTTP_CLIENT_ERROR = 400
+_HTTP_REQUEST_TIMEOUT = 408
 _HTTP_RATE_LIMITED = 429
 _HTTP_SERVER_ERROR = 500
 
@@ -32,12 +37,12 @@ class LLMFatalError(Exception):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section B — ClaudeClient (single-model HTTP client)
+# Section B — ClaudeClient (single-model SDK wrapper)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class ClaudeClient:
-    """Async OpenRouter client bound to a single Claude model.
+    """Async OpenRouter SDK client bound to a single Claude model.
 
     The system prompt is owned by the client (not the caller) so F-04 rules
     cannot be bypassed by passing a custom system message.
@@ -45,18 +50,16 @@ class ClaudeClient:
 
     def __init__(
         self,
-        http_client: httpx.AsyncClient,
-        api_key: str,
+        open_router: OpenRouter,
         model: str,
         rules: list[str],
         timeout_s: float,
     ) -> None:
-        """Bind the client to a shared :class:`httpx.AsyncClient` and one model."""
-        self._http = http_client
-        self._api_key = api_key
+        """Bind the client to a shared :class:`OpenRouter` SDK instance and one model."""
+        self._open_router = open_router
         self._model = model
         self._rules = rules
-        self._timeout_s = timeout_s
+        self._timeout_ms = int(timeout_s * 1000)
 
     @property
     def model(self) -> str:
@@ -67,56 +70,58 @@ class ClaudeClient:
         self,
         user_message: str,
         task_instructions: str | None = None,
-        rfq_id: str | None = None,
     ) -> str:
         """Send a user message and return the assistant's text response.
 
         Raises:
             LLMTransientError: Timeouts, 429, or any 5xx response.
-            LLMFatalError: Any 4xx response other than 429.
+            LLMFatalError: Any 4xx response other than 429, or a malformed response.
         """
         system_prompt = "F-04 AI Operating Rules\n\n" + "\n\n".join(self._rules)
         if task_instructions:
             system_prompt = f"{system_prompt}\n\nTask: {task_instructions}"
-        payload: dict[str, Any] = {
-            "model": self._model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "metadata": {
-                "ruleset": "F-04",
-                "rfq_id": rfq_id,
-            },
-        }
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
 
+        system_msg: ChatSystemMessageTypedDict = {
+            "role": "system",
+            "content": system_prompt,
+        }
+        user_msg: ChatUserMessageTypedDict = {
+            "role": "user",
+            "content": user_message,
+        }
+        messages: list[ChatMessagesTypedDict] = [system_msg, user_msg]
         try:
-            response = await self._http.post(
-                OPENROUTER_URL,
-                json=payload,
-                headers=headers,
-                timeout=self._timeout_s,
+            result = await self._open_router.chat.send_async(
+                model=self._model,
+                messages=messages,
+                timeout_ms=self._timeout_ms,
             )
+        except OpenRouterError as exc:
+            status = exc.status_code
+            if (
+                status in {_HTTP_RATE_LIMITED, _HTTP_REQUEST_TIMEOUT}
+                or status >= _HTTP_SERVER_ERROR
+            ):
+                raise LLMTransientError(
+                    f"{self._model} returned {status}: {exc.body[:200]}"
+                ) from exc
+            if status >= _HTTP_CLIENT_ERROR:
+                raise LLMFatalError(f"{self._model} returned {status}: {exc.body[:200]}") from exc
+            raise LLMFatalError(f"{self._model}: {exc}") from exc
+        except NoResponseError as exc:
+            raise LLMTransientError(f"no response from {self._model}: {exc}") from exc
         except httpx.TimeoutException as exc:
             raise LLMTransientError(f"timeout calling {self._model}") from exc
         except httpx.TransportError as exc:
             raise LLMTransientError(f"transport error calling {self._model}: {exc}") from exc
 
-        status = response.status_code
-        if status >= _HTTP_SERVER_ERROR or status == _HTTP_RATE_LIMITED:
-            raise LLMTransientError(f"{self._model} returned {status}: {response.text[:200]}")
-        if status >= _HTTP_CLIENT_ERROR:
-            raise LLMFatalError(f"{self._model} returned {status}: {response.text[:200]}")
-
-        data = response.json()
         try:
-            return str(data["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError) as exc:
-            raise LLMFatalError(f"{self._model} returned malformed response: {data}") from exc
+            content = result.choices[0].message.content
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise LLMFatalError(f"{self._model} returned malformed response") from exc
+        if content is None:
+            raise LLMFatalError(f"{self._model} returned no content")
+        return str(content)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -136,11 +141,10 @@ class LLMRouter:
         self,
         user_message: str,
         task_instructions: str | None = None,
-        rfq_id: str | None = None,
     ) -> str:
         """Try primary; on transient failure, try fallback. Fatal errors bubble up."""
         try:
-            return await self._primary.ask(user_message, task_instructions, rfq_id)
+            return await self._primary.ask(user_message, task_instructions)
         except LLMTransientError as exc:
             logger.warning(
                 "primary LLM %s failed transiently, falling back to %s: %s",
@@ -148,7 +152,7 @@ class LLMRouter:
                 self._fallback.model,
                 exc,
             )
-            return await self._fallback.ask(user_message, task_instructions, rfq_id)
+            return await self._fallback.ask(user_message, task_instructions)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,19 +160,16 @@ class LLMRouter:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def build_router(settings: Settings, http_client: httpx.AsyncClient) -> LLMRouter:
+def build_router(settings: Settings, open_router: OpenRouter) -> LLMRouter:
     """Build an :class:`LLMRouter` wired with the configured primary and fallback models."""
-    api_key = settings.OPENROUTER_API_KEY.get_secret_value()
     primary = ClaudeClient(
-        http_client=http_client,
-        api_key=api_key,
+        open_router=open_router,
         model=settings.PRIMARY_MODEL,
         rules=settings.SYSTEM_RULES,
         timeout_s=settings.LLM_TIMEOUT_S,
     )
     fallback = ClaudeClient(
-        http_client=http_client,
-        api_key=api_key,
+        open_router=open_router,
         model=settings.FALLBACK_MODEL,
         rules=settings.SYSTEM_RULES,
         timeout_s=settings.LLM_TIMEOUT_S,

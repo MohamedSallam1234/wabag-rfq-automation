@@ -8,15 +8,15 @@ and falls back from Opus to Sonnet on transient failures.
 
 ## 1. What was built
 
-| File | Purpose |
-|---|---|
-| `src/app/core/config.py` | Adds `OPENROUTER_API_KEY`, `PRIMARY_MODEL`, `FALLBACK_MODEL`, `LLM_TIMEOUT_S`, and the env-overridable `SYSTEM_RULES` (the F-04 rule list) to the typed `Settings`. |
-| `src/app/agents/llm/router.py` | Single-file LLM module: `build_system_prompt`, `ClaudeClient`, `LLMRouter`, `build_router`, and the two exception types. |
-| `src/app/api/deps.py` | New `get_router()` FastAPI dependency that returns the process-wide router. |
-| `src/app/main.py` | `lifespan` that creates **one** shared `httpx.AsyncClient` + `LLMRouter` and stashes them on `app.state`, plus a `GET /llm/ping` smoke endpoint. |
-| `tests/test_agents/test_llm_router.py` | 16 tests using `httpx.MockTransport` — no real network. |
-| `tests/test_core/test_config.py` | Adds tests for `SYSTEM_RULES` parsing and defaults (env var holds the F-04 rule list). |
-| `.env.example` | Documents the new LLM env vars. |
+| File                                   | Purpose                                                                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/core/config.py`               | Adds `OPENROUTER_API_KEY`, `PRIMARY_MODEL`, `FALLBACK_MODEL`, `LLM_TIMEOUT_S`, and the env-overridable `SYSTEM_RULES` (the F-04 rule list) to the typed `Settings`. |
+| `src/app/agents/llm/router.py`         | Single-file LLM module: `build_system_prompt`, `ClaudeClient`, `LLMRouter`, `build_router`, and the two exception types.                                            |
+| `src/app/api/deps.py`                  | New `get_router()` FastAPI dependency that returns the process-wide router.                                                                                         |
+| `src/app/main.py`                      | `lifespan` that creates **one** shared `OpenRouter` SDK client + `LLMRouter` and stashes them on `app.state`, plus a `GET /llm/ping` smoke endpoint.                |
+| `tests/test_agents/test_llm_router.py` | Tests mock `chat.send_async` with `AsyncMock` — no real network.                                                                                                    |
+| `tests/test_core/test_config.py`       | Adds tests for `SYSTEM_RULES` parsing and defaults (env var holds the F-04 rule list).                                                                              |
+| `.env.example`                         | Documents the new LLM env vars.                                                                                                                                     |
 
 ### Architecture in one picture
 
@@ -35,18 +35,18 @@ and falls back from Opus to Sonnet on transient failures.
                    │ ClaudeClient │  │ ClaudeClient │
                    │  Opus 4.7    │  │  Sonnet 4.6  │
                    └──────┬───────┘  └──────┬───────┘
-                          │ shared httpx.AsyncClient
+                          │ shared OpenRouter SDK client
                           ▼
-                   https://openrouter.ai/api/v1/chat/completions
+                   OpenRouter Chat Completions endpoint (URL owned by the SDK)
 ```
 
 ### Design decisions you should know about
 
 1. **The system prompt is owned by the client, not the caller.** Callers cannot
    override it. F-04 rules are guaranteed to be present on every call.
-2. **F-04 rules are injected in two places**: in `messages[0]` (drives model
-   behavior) and in `metadata.ruleset = "F-04"` (so OpenRouter-side audit logs
-   show the ruleset).
+2. **F-04 rules are injected via `messages[0]` (the system message)**, which
+   drives model behavior. Per-request audit metadata (e.g. `ruleset`, `rfq_id`)
+   is not currently forwarded to OpenRouter.
 3. **Rules are configurable via env**: set `SYSTEM_RULES` in `.env` as a
    pipe-separated string (the rules are the F-04 AI Operating Rules, named
    generically in the config so future non-F-04 rules can reuse the slot).
@@ -55,10 +55,11 @@ and falls back from Opus to Sonnet on transient failures.
 4. **Fatal vs. transient error mapping**:
    - Timeouts, transport errors, 429, 5xx → `LLMTransientError` → router tries fallback.
    - 400 / 401 / 404 / other 4xx → `LLMFatalError` → re-raised immediately.
-   A 400 from Opus would be a 400 from Sonnet too — don't waste tokens on caller bugs.
-5. **One shared `httpx.AsyncClient` for the whole app**, created in
-   `lifespan` and reused for every request. Per-request clients would tank
-   throughput.
+     A 400 from Opus would be a 400 from Sonnet too — don't waste tokens on caller bugs.
+5. **One shared `OpenRouter` SDK client for the whole app**, created in
+   `lifespan` (entered as an async context manager) and reused for every
+   request. The SDK owns its own httpx connection pool; per-request clients
+   would tank throughput.
 6. **No retries inside the client.** The router IS the retry mechanism.
 7. **No abstract base classes, no provider registry.** OpenRouter is the only
    provider. We will add abstraction when we need a second one, not before.
@@ -96,8 +97,9 @@ SYSTEM_RULES=Rule one, with a comma.|Rule two.|  | Rule three.
 
 ### 2.3 Install / sync deps
 
-The implementation uses `httpx` (already in `pyproject.toml`); no new packages
-were added.
+The implementation uses the official [`openrouter`](https://pypi.org/project/openrouter/)
+SDK (beta, pinned to `>=0.9,<1.0`) plus `httpx` (kept as a peer dep for error
+types). Both are declared in `pyproject.toml`.
 
 ```bash
 uv sync --dev
@@ -111,8 +113,8 @@ There are three layers of testing. Use them in order.
 
 ### 3.1 Unit tests (no network, no API key needed)
 
-The test file uses `httpx.MockTransport` to simulate OpenRouter. Run from
-`backend/`:
+The test file mocks `OpenRouter().chat.send_async` with `AsyncMock`, so
+nothing reaches the network. Run from `backend/`:
 
 ```bash
 # Just the router tests
@@ -122,18 +124,20 @@ uv run pytest tests/test_agents/test_llm_router.py -v
 uv run pytest
 ```
 
-What's covered (16 router tests + 2 config tests for SYSTEM_RULES):
+What's covered (router tests + config tests for SYSTEM_RULES):
 
-- `build_system_prompt` includes the rules and task instructions
-- request body has the F-04 system prompt + `metadata.ruleset` + `metadata.rfq_id`
-- `Authorization: Bearer <key>` header is sent
-- request URL is `https://openrouter.ai/api/v1/chat/completions`
-- 429 / 500 / 502 / 503 → `LLMTransientError` (parametrized)
-- 400 / 401 / 404 → `LLMFatalError` (parametrized)
-- timeouts → `LLMTransientError`
+- request carries the F-04 system prompt and task instructions in `messages[0]`
+- `model` and `timeout_ms` kwargs are forwarded to the SDK
+- 429 / 500 / 502 / 503 (raised as `OpenRouterError` with that status) →
+  `LLMTransientError` (parametrized)
+- 400 / 401 / 404 (raised as `OpenRouterError` with that status) →
+  `LLMFatalError` (parametrized)
+- `NoResponseError`, `httpx.TimeoutException`, `httpx.ConnectError` →
+  `LLMTransientError`
+- malformed response shape or `None` content → `LLMFatalError`
 - router uses primary when primary works
-- router falls back to secondary when primary returns 503
-- router does **not** fall back on 400 (asserts only 1 call was made)
+- router falls back to secondary when primary returns a transient error
+- router does **not** fall back on a fatal error (asserts only 1 call was made)
 - both failing transiently → `LLMTransientError` propagates
 - `SYSTEM_RULES` env var splits on `|` and ignores empty fragments
 - `SYSTEM_RULES` defaults are used when env var is unset
@@ -209,13 +213,12 @@ async def handler(llm: Annotated[LLMRouter, Depends(get_router)]) -> dict[str, s
     content = await llm.ask(
         user_message="raw user text or extracted document text",
         task_instructions="Extract X and return JSON with fields a, b, c.",
-        rfq_id="RFQ-123",  # optional but recommended for audit
     )
     return {"content": content}
 ```
 
 From a service / non-endpoint context (e.g. a background worker), call
-`build_router(settings, http_client)` once at startup and pass the router
+`build_router(settings, open_router)` once at startup and pass the router
 around — do **not** call it per-request.
 
 ### What `ask()` returns
@@ -228,10 +231,10 @@ it.
 
 ### What `ask()` raises
 
-| Exception | When | Should you retry? |
-|---|---|---|
-| `LLMTransientError` | Both Opus and Sonnet failed transiently | Maybe — surface as 503 to the caller |
-| `LLMFatalError` | Either model returned 4xx (excluding 429) | No — your prompt or auth is broken |
+| Exception           | When                                      | Should you retry?                    |
+| ------------------- | ----------------------------------------- | ------------------------------------ |
+| `LLMTransientError` | Both Opus and Sonnet failed transiently   | Maybe — surface as 503 to the caller |
+| `LLMFatalError`     | Either model returned 4xx (excluding 429) | No — your prompt or auth is broken   |
 
 The router has already attempted the fallback before raising. Don't re-wrap in
 your own retry loop.
@@ -263,11 +266,13 @@ that the team will expand to match the canonical spec.
 
 ## 6. FAQ
 
-**Q: Why not the `anthropic` SDK or the `openai` SDK?**
-A: We talk to OpenRouter, not Anthropic or OpenAI directly. Direct `httpx`
-gives us tight control over status-code → exception mapping, no extra
-dependency, and no SDK surprises (retries, transformations) we'd have to
-work around.
+**Q: Why the `openrouter` SDK and not `anthropic` / `openai`?**
+A: We talk to OpenRouter, not Anthropic or OpenAI directly. The official
+`openrouter` Python SDK is auto-generated from OpenRouter's OpenAPI spec, so
+it ships typed request/response models, owns the base URL and auth, and
+stays in sync with new OpenRouter features automatically. We still own
+status-code → exception mapping (`OpenRouterError.status_code` → transient
+vs. fatal) on top of it.
 
 **Q: Why is there no streaming / function-calling / `response_format` support?**
 A: Not needed for the extraction pipeline yet. Keep the surface small. Add
@@ -278,9 +283,9 @@ A: It's a leftover docstring stub from the initial scaffold. Harmless;
 delete in a cleanup pass.
 
 **Q: Where does timeout get enforced?**
-A: Per-call, on `_http.post(..., timeout=self._timeout_s)`. The shared
-`AsyncClient` itself has no global timeout so other call sites can pick their
-own.
+A: Per-call, via the SDK's `timeout_ms` kwarg on `chat.send_async`. We
+convert `LLM_TIMEOUT_S` (seconds, float) to milliseconds (int) at the call
+site so each request gets the same configured budget.
 
 **Q: How is the API key kept out of logs?**
 A: `OPENROUTER_API_KEY` is typed as `pydantic.SecretStr`. `repr(settings)`
