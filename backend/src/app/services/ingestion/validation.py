@@ -1,43 +1,42 @@
-"""Synchronous upload validation: size guard, magic-byte check, deep parse, and PDF slimming.
+"""Synchronous upload validation: size guard, magic-byte check, deep parse, and Markdown slimming.
 
 The client POSTs the file bytes to the backend, which streams them to a temp file on disk
 (RAM-bounded), checks the magic bytes against the extension, and deep-parses the file to reject
-corrupt or mismatched content. Born-digital PDFs are additionally converted to a compact
-Markdown artifact (text + tables) and only that slim version is stored — the heavy original is
-discarded. Only files that pass are uploaded to storage; an invalid file is a synchronous 4xx
-and nothing is ever stored.
+corrupt or mismatched content. Every supported type (``.pdf``/``.docx``/``.xlsx``/``.xls``) is
+converted to a compact Markdown artifact (text + tables) and only that slim version is stored —
+the heavy original is discarded. Only files that pass are uploaded to storage; an invalid file
+is a synchronous 4xx and nothing is ever stored.
 
 Two size caps apply: the *incoming body* cap (``MAX_UPLOAD_SIZE_MB``) can be large because the
-original PDF is discarded, while the *stored artifact* cap (``MAX_STORED_ARTIFACT_MB``) matches
-the Supabase bucket ``file_size_limit`` and is checked against the final stored bytes.
+original is discarded, while the *stored artifact* cap (``MAX_STORED_ARTIFACT_MB``) matches the
+Supabase bucket ``file_size_limit`` and is checked against the final stored Markdown bytes.
 """
 
 import contextlib
 import logging
 import os
+import re
 import tempfile
 import uuid
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 import anyio
 from fastapi import UploadFile
 
 from app.core.config import Settings
-from app.services.ingestion.excel_parser import extract_xlsx_sheet_names
-from app.services.ingestion.filetype import (
-    SNIFF_LENGTH,
-    canonical_content_type,
-    magic_matches_extension,
-)
+from app.services.ingestion.excel_parser import extract_xls_markdown, extract_xlsx_markdown
+from app.services.ingestion.filetype import SNIFF_LENGTH, magic_matches_extension
 from app.services.ingestion.pdf_text import NoExtractableTextError, extract_pdf_markdown
-from app.services.ingestion.word_parser import validate_docx
+from app.services.ingestion.word_parser import extract_docx_markdown
 
 logger = logging.getLogger(__name__)
 
 _BYTES_PER_MB = 1024 * 1024
 _READ_CHUNK_SIZE = 1024 * 1024
-_FALLBACK_CONTENT_TYPE = "application/octet-stream"
 _MARKDOWN_CONTENT_TYPE = "text/markdown"
+#: Characters not allowed in a storage object name; collapsed to "_" when building the key.
+_UNSAFE_OBJECT_NAME_CHARS = re.compile(r"[\x00-\x1f\x7f/\\]+")
 
 
 class UploadValidationError(Exception):
@@ -54,9 +53,9 @@ class UploadValidationError(Exception):
 class ValidatedUpload:
     """The validated bytes to store plus the metadata extracted while parsing.
 
-    ``data``/``size_bytes`` describe the *stored* artifact: for a PDF that is the extracted
-    Markdown (``stored_ext=".md"``, ``content_type="text/markdown"``); for other types it is
-    the original bytes stored as-is.
+    ``data``/``size_bytes`` describe the *stored* artifact, which is always the extracted
+    Markdown (``stored_ext=".md"``, ``content_type="text/markdown"``) regardless of the source
+    type. ``page_count`` is set only for PDFs and ``sheet_names`` only for spreadsheets.
     """
 
     data: bytes
@@ -67,31 +66,30 @@ class ValidatedUpload:
     content_type: str
 
 
-def plan_storage_path(project_id: uuid.UUID, document_id: uuid.UUID, ext: str) -> str:
-    """Build the storage object key for a document: ``{project_id}/{document_id}{ext}``."""
-    return f"{project_id}/{document_id}{ext}"
+def _safe_object_name(filename: str, fallback: str) -> str:
+    """Sanitize a filename into a single safe storage object-name component.
 
-
-async def _parse_office_metadata(tmp_path: str, ext: str) -> tuple[int | None, list[str] | None]:
-    """Parse a non-PDF office file off the event loop; return ``(page_count, sheet_names)``.
-
-    Opening the file with the format's parser is the integrity check: a corrupt file, or one
-    whose real type does not match its extension (e.g. an ``.xlsx`` renamed ``.docx``), fails
-    to parse. ``.xls`` has no parser and is accepted as a stored blob.
-
-    Raises:
-        UploadValidationError: 422 if the file cannot be parsed as its declared type.
+    Takes the basename (dropping any directory parts a client may have sent), strips control
+    characters and path separators, and falls back to ``fallback`` if nothing usable remains.
+    The raw filename is still persisted in the DB ``original_filename`` column; only the storage
+    key is sanitized.
     """
-    try:
-        if ext == ".xlsx":
-            return None, await anyio.to_thread.run_sync(extract_xlsx_sheet_names, tmp_path)
-        if ext == ".docx":
-            await anyio.to_thread.run_sync(validate_docx, tmp_path)
-            return None, None
-    except Exception as exc:
-        logger.exception("Office parse failed for %s upload", ext)
-        raise UploadValidationError(422, f"File could not be parsed as {ext}") from exc
-    return None, None  # .xls: accepted as a stored blob (no parser available)
+    base = PurePosixPath(filename.replace("\\", "/")).name
+    safe = _UNSAFE_OBJECT_NAME_CHARS.sub("_", base).strip("_. ")
+    return safe or fallback
+
+
+def plan_storage_path(
+    project_id: uuid.UUID, document_id: uuid.UUID, filename: str, stored_ext: str
+) -> str:
+    """Build the storage object key for a document.
+
+    Layout: ``projects/{project_id}/documents/{document_id}/{safe_filename}{stored_ext}`` — each
+    document gets its own folder and the object keeps the human-readable original name (including
+    its source extension) with the stored ``.md`` suffix appended.
+    """
+    safe_name = _safe_object_name(filename, str(document_id))
+    return f"projects/{project_id}/documents/{document_id}/{safe_name}{stored_ext}"
 
 
 async def _slim_pdf(tmp_path: str) -> tuple[bytes, int]:
@@ -116,16 +114,58 @@ async def _slim_pdf(tmp_path: str) -> tuple[bytes, int]:
     return markdown.encode("utf-8"), page_count
 
 
+async def _slim_docx(tmp_path: str) -> bytes:
+    """Convert a ``.docx`` to Markdown bytes off the event loop.
+
+    Raises:
+        UploadValidationError: 422 if the file cannot be parsed as a ``.docx``.
+    """
+    try:
+        markdown = await anyio.to_thread.run_sync(extract_docx_markdown, tmp_path)
+    except Exception as exc:
+        logger.exception("DOCX parse failed")
+        raise UploadValidationError(422, "File could not be parsed as .docx") from exc
+    return markdown.encode("utf-8")
+
+
+async def _slim_xlsx(tmp_path: str) -> tuple[bytes, list[str]]:
+    """Convert an ``.xlsx`` to Markdown bytes off the event loop; return ``(data, sheet_names)``.
+
+    Raises:
+        UploadValidationError: 422 if the file cannot be parsed as an ``.xlsx``.
+    """
+    try:
+        markdown, sheet_names = await anyio.to_thread.run_sync(extract_xlsx_markdown, tmp_path)
+    except Exception as exc:
+        logger.exception("XLSX parse failed")
+        raise UploadValidationError(422, "File could not be parsed as .xlsx") from exc
+    return markdown.encode("utf-8"), sheet_names
+
+
+async def _slim_xls(tmp_path: str) -> tuple[bytes, list[str]]:
+    """Convert a legacy ``.xls`` to Markdown bytes off the event loop; return ``(data, names)``.
+
+    Raises:
+        UploadValidationError: 422 if the file cannot be parsed as an ``.xls`` workbook.
+    """
+    try:
+        markdown, sheet_names = await anyio.to_thread.run_sync(extract_xls_markdown, tmp_path)
+    except Exception as exc:
+        logger.exception("XLS parse failed")
+        raise UploadValidationError(422, "File could not be parsed as .xls") from exc
+    return markdown.encode("utf-8"), sheet_names
+
+
 async def validate_upload_bytes(
     file: UploadFile, *, ext: str, settings: Settings
 ) -> ValidatedUpload:
-    """Validate an uploaded file's size, magic bytes, and parseability; slim PDFs to Markdown.
+    """Validate an uploaded file's size, magic bytes, and parseability; slim it to Markdown.
 
     Streams ``file`` to a temp file in chunks (RAM-bounded), enforcing the incoming-size cap as
-    it goes, checks the leading bytes against ``ext``, then deep-parses the file. PDFs are
-    converted to a Markdown artifact (text + tables) and only that is returned for storage;
-    other types are stored as-is. A final stored-artifact cap is enforced on the bytes to store.
-    The temp file is always removed.
+    it goes, checks the leading bytes against ``ext``, then deep-parses the file. Every supported
+    type is converted to a Markdown artifact (text + tables) and only that is returned for
+    storage. A final stored-artifact cap is enforced on the bytes to store. The temp file is
+    always removed.
 
     Args:
         file: The uploaded file (FastAPI ``UploadFile``).
@@ -158,19 +198,20 @@ async def validate_upload_bytes(
         if not magic_matches_extension(head, ext):
             raise UploadValidationError(422, f"File content is not a valid {ext} file")
 
-        page_count: int | None
-        sheet_names: list[str] | None
+        # Every supported type is slimmed to a Markdown artifact (stored as ``.md``). Only the
+        # extracted metadata differs: page_count for PDFs, sheet_names for spreadsheets.
+        page_count: int | None = None
+        sheet_names: list[str] | None = None
         if ext == ".pdf":
             data, page_count = await _slim_pdf(tmp_path)
-            sheet_names = None
-            stored_ext = ".md"
-            content_type = _MARKDOWN_CONTENT_TYPE
-        else:
-            page_count, sheet_names = await _parse_office_metadata(tmp_path, ext)
-            async with await anyio.open_file(tmp_path, "rb") as buffer:
-                data = await buffer.read()
-            stored_ext = ext
-            content_type = canonical_content_type(ext) or _FALLBACK_CONTENT_TYPE
+        elif ext == ".docx":
+            data = await _slim_docx(tmp_path)
+        elif ext == ".xlsx":
+            data, sheet_names = await _slim_xlsx(tmp_path)
+        else:  # ".xls"
+            data, sheet_names = await _slim_xls(tmp_path)
+        stored_ext = ".md"
+        content_type = _MARKDOWN_CONTENT_TYPE
 
         size_bytes = len(data)
         if size_bytes > settings.MAX_STORED_ARTIFACT_MB * _BYTES_PER_MB:

@@ -19,9 +19,15 @@ from app.agents.llm.router import (
 DEFAULT_TEST_RULES = ["Test rule 1: be brief.", "Test rule 2: never invent."]
 
 
-def _ok_result(text: str = "hello") -> SimpleNamespace:
-    """Return a ChatResult-shaped object exposing ``choices[0].message.content``."""
-    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+async def _stream_chunks(*deltas: str | None):
+    """Fake event stream yielding one chunk per content delta (``choices[0].delta.content``)."""
+    for delta in deltas:
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=delta))])
+
+
+def _ok_result(text: str | None = "hello"):
+    """Return a fake stream yielding a single content delta of ``text``."""
+    return _stream_chunks(text)
 
 
 def _raw_response(status: int, body: str = "boom") -> httpx.Response:
@@ -78,11 +84,36 @@ async def test_request_carries_system_prompt() -> None:
     assert kwargs["model"] == "anthropic/claude-opus-4.7"
     messages = kwargs["messages"]
     assert messages[0]["role"] == "system"
-    assert "F-04 AI Operating Rules" in messages[0]["content"]
     assert "My one rule." in messages[0]["content"]
     assert "extract fields" in messages[0]["content"]
     assert messages[1] == {"role": "user", "content": "hi"}
     assert kwargs["timeout_ms"] == 5000
+    assert kwargs["stream"] is True
+
+
+async def test_reasoning_disabled_by_default() -> None:
+    client, fake_send = _make_client()
+
+    await client.ask("hi")
+
+    assert fake_send.call_args.kwargs["reasoning"] is None
+
+
+async def test_reasoning_effort_is_passed_when_enabled() -> None:
+    fake_send = AsyncMock(return_value=_ok_result("hello"))
+    fake_open_router = MagicMock()
+    fake_open_router.chat.send_async = fake_send
+    client = ClaudeClient(
+        open_router=fake_open_router,
+        model="anthropic/claude-opus-4.8",
+        rules=DEFAULT_TEST_RULES,
+        timeout_s=5.0,
+        reasoning_effort="high",
+    )
+
+    await client.ask("hi")
+
+    assert fake_send.call_args.kwargs["reasoning"] == {"effort": "high"}
 
 
 async def test_returns_assistant_text() -> None:
@@ -91,6 +122,15 @@ async def test_returns_assistant_text() -> None:
     result = await client.ask("hi")
 
     assert result == "hello from the model"
+
+
+async def test_accumulates_streamed_content_deltas() -> None:
+    client, fake_send = _make_client()
+    fake_send.return_value = _stream_chunks("Hello, ", "world", "!")
+
+    result = await client.ask("hi")
+
+    assert result == "Hello, world!"
 
 
 # ─────────────────────────── Section B: error mapping ────────────────────────

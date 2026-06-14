@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 from pypdf import PdfWriter
@@ -58,8 +59,20 @@ def _text_table_pdf_bytes(pages: int = 1) -> bytes:
 
 def _xlsx_bytes() -> bytes:
     workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Tag", "Description"])
+    sheet.append(["P-101", "Centrifugal pump"])
     buffer = io.BytesIO()
     workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _docx_bytes() -> bytes:
+    document = DocxDocument()
+    document.add_heading("Scope of Work", level=1)
+    document.add_paragraph("Supply and install centrifugal pumps.")
+    buffer = io.BytesIO()
+    document.save(buffer)
     return buffer.getvalue()
 
 
@@ -185,7 +198,47 @@ def test_upload_xlsx_returns_201_with_sheet_names() -> None:
     assert body["sheet_names"] == ["Sheet"]
     assert body["doc_type"] == "Equipment List"
     assert body["retention"] == "persistent"
+    assert body["content_type"] == "text/markdown"
     proxy.upload.assert_awaited_once()
+
+    # The stored object is a .md artifact under the per-document folder, holding the sheet table.
+    stored_path, stored_bytes, stored_opts = proxy.upload.call_args.args
+    assert stored_path.startswith(f"projects/{project.id}/documents/")
+    assert stored_path.endswith("05_Equipment_List.xlsx.md")
+    assert stored_opts == {"content-type": "text/markdown"}
+    text = stored_bytes.decode("utf-8")
+    assert "## Sheet" in text
+    assert "P-101" in text
+
+
+def test_upload_docx_returns_201_md() -> None:
+    project = _make_project()
+    session = _make_session()
+    session.get = AsyncMock(return_value=project)
+    storage, proxy = _make_storage()
+
+    app.dependency_overrides[get_db] = lambda: session
+    app.dependency_overrides[get_storage] = lambda: storage
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/projects/{project.id}/documents",
+        files={"file": ("02_Scope_of_Work.docx", _docx_bytes(), "application/octet-stream")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["content_type"] == "text/markdown"
+    assert body["page_count"] is None
+    assert body["sheet_names"] is None
+    proxy.upload.assert_awaited_once()
+
+    stored_path, stored_bytes, stored_opts = proxy.upload.call_args.args
+    assert stored_path.endswith("02_Scope_of_Work.docx.md")
+    assert stored_opts == {"content-type": "text/markdown"}
+    text = stored_bytes.decode("utf-8")
+    assert "# Scope of Work" in text
+    assert "centrifugal pumps" in text
 
 
 @pytest.mark.parametrize(

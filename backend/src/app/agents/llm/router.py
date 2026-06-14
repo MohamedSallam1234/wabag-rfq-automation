@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from typing import cast
 
 import httpx
 from openrouter import OpenRouter
 from openrouter.components import (
     ChatMessagesTypedDict,
+    ChatStreamChunk,
     ChatSystemMessageTypedDict,
     ChatUserMessageTypedDict,
+    ReasoningConfigTypedDict,
 )
 from openrouter.errors import NoResponseError, OpenRouterError
 
@@ -54,12 +58,18 @@ class ClaudeClient:
         model: str,
         rules: list[str],
         timeout_s: float,
+        reasoning_effort: str = "none",
     ) -> None:
-        """Bind the client to a shared :class:`OpenRouter` SDK instance and one model."""
+        """Bind the client to a shared :class:`OpenRouter` SDK instance and one model.
+
+        ``reasoning_effort`` enables extended thinking on every call (OpenRouter ``reasoning``);
+        ``"none"`` leaves thinking off.
+        """
         self._open_router = open_router
         self._model = model
         self._rules = rules
         self._timeout_ms = int(timeout_s * 1000)
+        self._reasoning_effort = reasoning_effort
 
     @property
     def model(self) -> str:
@@ -77,7 +87,7 @@ class ClaudeClient:
             LLMTransientError: Timeouts, 429, or any 5xx response.
             LLMFatalError: Any 4xx response other than 429, or a malformed response.
         """
-        system_prompt = "F-04 AI Operating Rules\n\n" + "\n\n".join(self._rules)
+        system_prompt = "\n\n".join(self._rules)
         if task_instructions:
             system_prompt = f"{system_prompt}\n\nTask: {task_instructions}"
 
@@ -90,12 +100,29 @@ class ClaudeClient:
             "content": user_message,
         }
         messages: list[ChatMessagesTypedDict] = [system_msg, user_msg]
+        reasoning: ReasoningConfigTypedDict | None = (
+            None if self._reasoning_effort == "none" else {"effort": self._reasoning_effort}
+        )
+        # Always stream and accumulate the content deltas: with extended thinking enabled a single
+        # generation can exceed the provider's non-streaming window. Reasoning deltas are produced
+        # server-side to improve quality but are not needed in the returned text.
+        parts: list[str] = []
         try:
-            result = await self._open_router.chat.send_async(
-                model=self._model,
-                messages=messages,
-                timeout_ms=self._timeout_ms,
+            stream = cast(
+                AsyncIterator[ChatStreamChunk],
+                await self._open_router.chat.send_async(
+                    model=self._model,
+                    messages=messages,
+                    timeout_ms=self._timeout_ms,
+                    reasoning=reasoning,
+                    stream=True,
+                ),
             )
+            async for chunk in stream:
+                for choice in chunk.choices:
+                    content_delta = choice.delta.content
+                    if content_delta:
+                        parts.append(str(content_delta))
         except OpenRouterError as exc:
             status = exc.status_code
             if (
@@ -114,14 +141,13 @@ class ClaudeClient:
             raise LLMTransientError(f"timeout calling {self._model}") from exc
         except httpx.TransportError as exc:
             raise LLMTransientError(f"transport error calling {self._model}: {exc}") from exc
-
-        try:
-            content = result.choices[0].message.content
         except (AttributeError, IndexError, TypeError) as exc:
-            raise LLMFatalError(f"{self._model} returned malformed response") from exc
-        if content is None:
+            raise LLMFatalError(f"{self._model} returned a malformed stream") from exc
+
+        content = "".join(parts)
+        if not content:
             raise LLMFatalError(f"{self._model} returned no content")
-        return str(content)
+        return content
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,11 +193,13 @@ def build_router(settings: Settings, open_router: OpenRouter) -> LLMRouter:
         model=settings.PRIMARY_MODEL,
         rules=settings.SYSTEM_RULES,
         timeout_s=settings.LLM_TIMEOUT_S,
+        reasoning_effort=settings.LLM_REASONING_EFFORT,
     )
     fallback = ClaudeClient(
         open_router=open_router,
         model=settings.FALLBACK_MODEL,
         rules=settings.SYSTEM_RULES,
         timeout_s=settings.LLM_TIMEOUT_S,
+        reasoning_effort=settings.LLM_REASONING_EFFORT,
     )
     return LLMRouter(primary=primary, fallback=fallback)

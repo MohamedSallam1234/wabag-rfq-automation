@@ -52,9 +52,10 @@ async def upload_document(
 
     A single synchronous step. The client POSTs the file; the backend validates the
     extension and content (magic bytes + deep parse), uploads the validated bytes to
-    Supabase Storage, classifies the filename, and returns the created document. Born-digital
-    PDFs are slimmed to a Markdown artifact (text + tables) and stored as ``.md`` — the heavy
-    original is discarded. Invalid files are rejected (415 / 422 / 413) and nothing is stored.
+    Supabase Storage, classifies the filename, and returns the created document. Every supported
+    type (PDF/DOCX/XLSX/XLS) is converted to a Markdown artifact (text + tables) and stored as
+    ``.md`` — the heavy original is discarded. Invalid files are rejected (415 / 422 / 413) and
+    nothing is stored.
     """
     filename = file.filename or ""
     ext = normalize_extension(filename)
@@ -77,7 +78,7 @@ async def upload_document(
     classification = classify_filename(filename)
     document_id = uuid.uuid4()
     bucket = settings.SUPABASE_STORAGE_BUCKET
-    storage_path = plan_storage_path(project.id, document_id, validated.stored_ext)
+    storage_path = plan_storage_path(project.id, document_id, filename, validated.stored_ext)
 
     # Store the validated bytes first; only persist the row if the upload succeeds (a row
     # with no object would be unusable). The reverse gap — a DB failure after a successful

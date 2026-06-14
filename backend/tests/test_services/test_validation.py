@@ -18,9 +18,6 @@ from app.services.ingestion.validation import UploadValidationError, validate_up
 
 SETTINGS = get_settings()
 
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
 
 # --------------------------------------------------------------------------- #
 # File-fixture builders (valid, parseable office files)
@@ -86,9 +83,24 @@ class _FakeUpload:
 def test_plan_storage_path() -> None:
     project_id = uuid.uuid4()
     document_id = uuid.uuid4()
-    assert validation.plan_storage_path(project_id, document_id, ".pdf") == (
-        f"{project_id}/{document_id}.pdf"
-    )
+    key = validation.plan_storage_path(project_id, document_id, "05_Equipment_List.xlsx", ".md")
+    assert key == f"projects/{project_id}/documents/{document_id}/05_Equipment_List.xlsx.md"
+
+
+def test_plan_storage_path_sanitizes_filename() -> None:
+    project_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    # Directory parts a client may smuggle in are dropped (no traversal in the key).
+    key = validation.plan_storage_path(project_id, document_id, "../../etc/pass wd.pdf", ".md")
+    assert key == f"projects/{project_id}/documents/{document_id}/pass wd.pdf.md"
+
+
+def test_plan_storage_path_falls_back_to_document_id() -> None:
+    project_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    # A name that sanitizes to nothing falls back to the document id.
+    key = validation.plan_storage_path(project_id, document_id, "///", ".md")
+    assert key == f"projects/{project_id}/documents/{document_id}/{document_id}.md"
 
 
 # --------------------------------------------------------------------------- #
@@ -110,30 +122,31 @@ async def test_validate_pdf_returns_markdown_artifact() -> None:
     assert result.size_bytes == len(result.data)
 
 
-async def test_validate_xlsx_returns_sheet_names() -> None:
+async def test_validate_xlsx_returns_markdown_and_sheet_names() -> None:
     result = await validate_upload_bytes(_FakeUpload(_xlsx_bytes()), ext=".xlsx", settings=SETTINGS)
     assert result.sheet_names == ["Sheet"]
     assert result.page_count is None
-    assert result.stored_ext == ".xlsx"
-    assert result.content_type == _XLSX_MIME
-    assert result.data.startswith(b"PK\x03\x04")  # original bytes stored as-is
+    # The stored artifact is the extracted Markdown, not the original workbook bytes.
+    assert result.stored_ext == ".md"
+    assert result.content_type == "text/markdown"
+    assert not result.data.startswith(b"PK\x03\x04")
+    assert "## Sheet" in result.data.decode("utf-8")
 
 
-async def test_validate_docx_ok() -> None:
+async def test_validate_docx_returns_markdown() -> None:
     result = await validate_upload_bytes(_FakeUpload(_docx_bytes()), ext=".docx", settings=SETTINGS)
     assert result.page_count is None
     assert result.sheet_names is None
-    assert result.stored_ext == ".docx"
-    assert result.content_type == _DOCX_MIME
+    assert result.stored_ext == ".md"
+    assert result.content_type == "text/markdown"
+    assert not result.data.startswith(b"PK\x03\x04")
 
 
-async def test_validate_xls_accepted_as_blob() -> None:
-    result = await validate_upload_bytes(_FakeUpload(_OLE2_BYTES), ext=".xls", settings=SETTINGS)
-    assert result.page_count is None
-    assert result.sheet_names is None
-    assert result.stored_ext == ".xls"
-    assert result.content_type == "application/vnd.ms-excel"
-    assert result.size_bytes == len(_OLE2_BYTES)
+async def test_validate_xls_invalid_ole2_raises_422() -> None:
+    """An OLE2 file that is not a real workbook clears the magic gate but fails the deep parse."""
+    with pytest.raises(UploadValidationError) as exc:
+        await validate_upload_bytes(_FakeUpload(_OLE2_BYTES), ext=".xls", settings=SETTINGS)
+    assert exc.value.status_code == 422
 
 
 async def test_validate_scanned_pdf_raises_422() -> None:
