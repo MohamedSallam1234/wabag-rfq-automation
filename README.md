@@ -28,10 +28,10 @@ No human-in-the-loop review step. The LLM operates autonomously under the AI Ope
 ### F-01: Document Upload
 
 - Accept up to 20 files per batch (max 500MB total)
-- Supported formats: PDF, DOCX, XLSX, XLS
+- Supported formats: PDF, DOCX, XLSX, XLS — all normalized to Markdown at intake (text + tables) and stored as a single `text/markdown` artifact; the heavy original is discarded
 - Extract metadata: page count, file size, MIME type
 - Validate file integrity, reject corrupted files
-- Support multi-sheet Excel workbooks (a single `.xls`/`.xlsx` may contain 6+ equipment datasheets)
+- Support multi-sheet Excel workbooks (a single `.xls`/`.xlsx` may contain 6+ equipment datasheets — each sheet becomes a `## {sheet}` section in the Markdown)
 
 ### F-02: Document Classification
 
@@ -41,9 +41,9 @@ Auto-classify by filename prefix pattern:
 | --------------------------------- | ---------------------------------------------- |
 | `01_*`                            | Employer Technical Specifications              |
 | `02_*`                            | Process Engineering Profile                    |
-| `03_RFQ*`                         | RFQ Template                                   |
+| `03_*`                            | Equipment List                                 |
 | `04_*`                            | Hydraulic Calculation Profile                  |
-| `05_*`                            | Equipment List                                 |
+| `05_RFQ*`                         | RFQ Template                                   |
 | `SectionII_*`                     | Tender DataSheet                               |
 | `SectionIII_*`                    | Tender Evaluation Method                       |
 | `SectionIV_*`                     | Eligibility & Qualification Criteria           |
@@ -82,11 +82,11 @@ Cross-document validation (Reference Matrix):
 
 | Field                     | Primary Source         | Secondary Source      | Rule                 |
 | ------------------------- | ---------------------- | --------------------- | -------------------- |
-| Capacity (m³/hr)          | 04_Hydraulic           | 03_Process            | Within ±10%          |
+| Capacity (m³/hr)          | 04_Hydraulic           | 02_Process            | Within ±10%          |
 | Differential Head (m)     | 04_Hydraulic           | 02_Process            | Within ±5%           |
 | Material Grade            | 01_Employer_Specs      | Wabag Material Master | Must exist in list   |
 | Motor Power (kW)          | 04_Hydraulic           | Egyptian Code factor  | Apply service factor |
-| Quantity                  | 06_Equipment_List      | P&ID tag count        | Must match           |
+| Quantity                  | 03_Equipment_List      | P&ID tag count        | Must match           |
 | Discharge Pressure (mbar) | Blower spec sheet      | Process design        | Within ±10%          |
 | DN / PN (valves)          | Valve List             | Piping P&ID           | Must match           |
 | Belt Width (m)            | Belt Press datasheet   | Process design        | Must match           |
@@ -178,7 +178,7 @@ When the same field appears in multiple documents, resolve using this priority o
 1. Employer's Requirements / Project Specifications (`01_*`, `SectionVI_*`)
 2. Process Engineering (`02_*`)
 3. Hydraulic Profile (`04_*`)
-4. Equipment List (`06_*`)
+4. Equipment List (`03_*`)
 5. Industry Standards (DIN, IEC, EN)
 
 If conflict remains after applying precedence, store both values in a `conflicts[]` array on the field, set `confidence: 0.0`, and mark `status: "conflict"`. Never auto-resolve conflicts — emit the conflict as output metadata.
@@ -244,6 +244,8 @@ Employer's Requirements / Project Specifications always prevail over all other d
 Every extracted value must be auditable: traceable to a source, assigned a confidence score, and defensible under review. The system's job is not to look complete — it is to be correct and transparent.
 
 ### F-06: RFQ Generation
+
+> **v1 implementation note.** `POST /api/v1/projects/{id}/rfqs` takes the RFQ template as a multipart upload plus an `equipment` name and produces the datasheet via **map-reduce**: each project source document is extracted in its own LLM call (run in parallel) for the fields it supports, then a single merge+fill call assembles the complete datasheet (applying precedence/conflict rules). This keeps every call within the model's context window instead of sending the whole project at once. The result JSON is rendered to a **fresh `.xlsx`** (the original template's styling/formulas are **not** preserved in v1) and persisted as a `documents` row (`doc_type="RFQ Package"`). The uploaded template is converted to Markdown and used transiently. The operating rules live in `system_prompt.md`. High-fidelity template filling, intra-document chunking, relevance filtering, and background-job execution are documented follow-ups. See `backend/docs/rfq-generation.md`.
 
 Templates are **fixed and immutable per equipment type** — the engineering team authors one canonical template per equipment category (e.g. one blower template, one RAS pump template, one mixer template). These templates live **outside** this system; the engineer uploads the appropriate template(s) in the same batch as the source documents (§F-01), classified via the `03_RFQ*` filename pattern (§F-02). See §F-11 for template handling. The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Template structure, headers, formulas, and conditional formatting are preserved byte-for-byte in the output.
 
@@ -395,7 +397,7 @@ The audit trail is the definitive record of how each cell in the output Excel wa
 
 ### F-11: Template Handling
 
-The system does **not** maintain a server-side template library. Templates are authored and versioned by the engineering team externally, and uploaded with each project batch (classified via the `03_RFQ*` filename pattern, §F-02).
+The system does **not** maintain a server-side template library. Templates are authored and versioned by the engineering team externally, and uploaded with each project batch (classified via the `05_RFQ*` filename pattern, §F-02).
 
 - Engineers upload one canonical fixed template per equipment type in the batch (e.g. blower datasheet, RAS pump datasheet, mixer datasheet — see §F-06 for illustrative structures)
 - Uploaded templates are treated as immutable inputs: the system only populates predefined editable cells; it never alters structure, headers, formulas, merged cells, or conditional formatting (F-04.R6)
