@@ -32,9 +32,9 @@ class DocType(StrEnum):
 _RULES: list[tuple[re.Pattern[str], DocType]] = [
     (re.compile(r"^01_", re.IGNORECASE), DocType.EMPLOYER_TECHNICAL_SPECIFICATIONS),
     (re.compile(r"^02_", re.IGNORECASE), DocType.PROCESS_ENGINEERING_PROFILE),
-    (re.compile(r"^03_RFQ", re.IGNORECASE), DocType.RFQ_TEMPLATE),
+    (re.compile(r"^03_", re.IGNORECASE), DocType.EQUIPMENT_LIST),
     (re.compile(r"^04_", re.IGNORECASE), DocType.HYDRAULIC_CALCULATION_PROFILE),
-    (re.compile(r"^05_", re.IGNORECASE), DocType.EQUIPMENT_LIST),
+    (re.compile(r"^05_RFQ", re.IGNORECASE), DocType.RFQ_TEMPLATE),
     (re.compile(r"^General Motors Specs", re.IGNORECASE), DocType.GENERAL_MOTOR_SPECIFICATIONS),
     (
         re.compile(r"^GENERAL MECHANICAL WORKS", re.IGNORECASE),

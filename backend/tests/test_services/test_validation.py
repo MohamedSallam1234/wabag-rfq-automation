@@ -83,8 +83,8 @@ class _FakeUpload:
 def test_plan_storage_path() -> None:
     project_id = uuid.uuid4()
     document_id = uuid.uuid4()
-    key = validation.plan_storage_path(project_id, document_id, "05_Equipment_List.xlsx", ".md")
-    assert key == f"projects/{project_id}/documents/{document_id}/05_Equipment_List.xlsx.md"
+    key = validation.plan_storage_path(project_id, document_id, "03_Equipment_List.xlsx", ".md")
+    assert key == f"projects/{project_id}/documents/{document_id}/03_Equipment_List.xlsx.md"
 
 
 def test_plan_storage_path_sanitizes_filename() -> None:

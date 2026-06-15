@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     LLM_REASONING_EFFORT: LLMReasoningEffort = "xhigh"
     # Max concurrent per-document extraction calls during map-reduce RFQ generation (bounds the
     # async fan-out so we don't hammer the provider's rate limits).
-    RFQ_MAX_CONCURRENT_EXTRACTIONS: int = 8
+    RFQ_MAX_CONCURRENT_EXTRACTIONS: int = 12
     SYSTEM_RULES: Annotated[list[str], NoDecode] = Field(
         default_factory=_default_system_rules,
     )

@@ -113,7 +113,7 @@ async def test_generate_rfq_fans_out_per_document_then_merges() -> None:
 
     generation, xlsx_bytes = await generate_rfq(
         equipment="aeration blower",
-        template_label="03_RFQ_Blower.xlsx (RFQ Template)",
+        template_label="05_RFQ_Blower.xlsx (RFQ Template)",
         template_md="# Blower Template",
         sources=sources,
         storage=storage,

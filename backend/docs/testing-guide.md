@@ -74,7 +74,7 @@ curl -s "$BASE/api/v1/projects/$PROJECT_ID/documents" | jq
 # 3.3b Upload an Excel workbook → 201. It is converted to Markdown (one ## section per sheet);
 #      sheet_names is populated and content_type="text/markdown", page_count=null.
 curl -s -X POST "$BASE/api/v1/projects/$PROJECT_ID/documents" \
-  -F "file=@05_Equipment_List_Rev01.xlsx" | jq '{content_type, sheet_names, page_count}'
+  -F "file=@03_Equipment_List_Rev01.xlsx" | jq '{content_type, sheet_names, page_count}'
 
 # 3.4 Fetch detail + a signed download URL  → 200. The URL always serves the .md artifact:
 DOC_ID=$(curl -s "$BASE/api/v1/projects/$PROJECT_ID/documents" | jq -r '.[0].id')
@@ -101,9 +101,9 @@ mapping:
 |---|---|---|---|
 | `01_Employer_Technical_Specifications_Rev02.pdf` | Employer Technical Specifications | 2 | persistent |
 | `02_Process_Engineering_Rev00.pdf` | Process Engineering Profile | 0 | persistent |
-| `03_RFQ_Blower_Template_Rev01.xlsx` | RFQ Template | 1 | transient |
+| `03_Equipment_List_Rev01.xlsx` | Equipment List | 1 | persistent |
 | `04_Hydraulic_Profile.pdf` | Hydraulic Calculation Profile | – | persistent |
-| `05_Equipment_List_Rev01.xlsx` | Equipment List | 1 | persistent |
+| `05_RFQ_Blower_Template_Rev01.xlsx` | RFQ Template | 1 | transient |
 | `Centrifugal_Pump_DataSheet_Rev03.pdf` | Equipment DataSheet | 3 | transient |
 | `random_notes.pdf` | *(null)* | – | transient |
 

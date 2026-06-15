@@ -126,7 +126,7 @@ def _clear_overrides() -> Iterator[None]:
 
 
 def _post(client: TestClient, project_id: uuid.UUID, *, equipment: str | None = "aeration blower"):
-    files = {"file": ("03_RFQ_Blower.xlsx", _xlsx_template_bytes(), _XLSX_MIME)}
+    files = {"file": ("05_RFQ_Blower.xlsx", _xlsx_template_bytes(), _XLSX_MIME)}
     data = {"equipment": equipment} if equipment is not None else {}
     return client.post(f"/api/v1/projects/{project_id}/rfqs", files=files, data=data)
 

@@ -190,7 +190,7 @@ def test_upload_xlsx_returns_201_with_sheet_names() -> None:
     client = TestClient(app)
     response = client.post(
         f"/api/v1/projects/{project.id}/documents",
-        files={"file": ("05_Equipment_List.xlsx", _xlsx_bytes(), _XLSX_MIME)},
+        files={"file": ("03_Equipment_List.xlsx", _xlsx_bytes(), _XLSX_MIME)},
     )
 
     assert response.status_code == 201
@@ -204,7 +204,7 @@ def test_upload_xlsx_returns_201_with_sheet_names() -> None:
     # The stored object is a .md artifact under the per-document folder, holding the sheet table.
     stored_path, stored_bytes, stored_opts = proxy.upload.call_args.args
     assert stored_path.startswith(f"projects/{project.id}/documents/")
-    assert stored_path.endswith("05_Equipment_List.xlsx.md")
+    assert stored_path.endswith("03_Equipment_List.xlsx.md")
     assert stored_opts == {"content-type": "text/markdown"}
     text = stored_bytes.decode("utf-8")
     assert "## Sheet" in text

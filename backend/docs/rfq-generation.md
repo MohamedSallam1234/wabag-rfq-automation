@@ -14,7 +14,7 @@ datasheet.
 Engineer workflow:
 
 1. Create a project and upload the source documents (`01_*` employer specs, `02_*` process,
-   `04_*` hydraulic, `06_*` equipment list) via `POST /api/v1/projects/{id}/documents` — each is
+   `04_*` hydraulic, `03_*` equipment list) via `POST /api/v1/projects/{id}/documents` — each is
    converted to Markdown and stored (F-01).
 2. At generation time, call the endpoint below with the **RFQ template file** and the **equipment
    name**.

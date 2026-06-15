@@ -29,8 +29,8 @@ them by filename — all in a single synchronous request.
   A scanned / image-only PDF (no extractable text) is rejected `422` (no OCR); office files are
   born-digital, so an empty one yields empty/near-empty Markdown rather than a rejection.
 - **Classification** is deterministic filename-prefix matching (no LLM), e.g. `01_*` →
-  *Employer Technical Specifications*, `03_RFQ*` → *RFQ Template*. Engineers can override.
-- **Retention:** project-common docs (`01`/`02`/`04`/`05`) are `persistent`; RFQ-specific
+  *Employer Technical Specifications*, `05_RFQ*` → *RFQ Template*. Engineers can override.
+- **Retention:** project-common docs (`01`/`02`/`03`/`04`) are `persistent`; RFQ-specific
   docs (RFQ template, datasheets, specs) and unmatched files are `transient` (to be deleted
   after the RFQ is generated). Derived from classification; recomputed on override.
 - **No authentication.** Every `/api/v1/**` endpoint is **open** — anyone who can reach the
@@ -290,8 +290,8 @@ evolve without migrations), `doc_type_source` (`auto`/`manual` enum), `revision_
 
 | Retention | Documents | Lifecycle |
 |---|---|---|
-| `persistent` | Project-common inputs: `01_*` Employer, `02_*` Process, `04_*` Hydraulic, `05_*` Equipment List (and, later, the generated RFQ output) | Kept for the life of the project. |
-| `transient` | RFQ-specific inputs: RFQ template (`03_RFQ*`), datasheets, specs, and any **unmatched** file | Needed only during generation; **deleted from storage once the RFQ has been generated**. |
+| `persistent` | Project-common inputs: `01_*` Employer, `02_*` Process, `03_*` Equipment List, `04_*` Hydraulic (and, later, the generated RFQ output) | Kept for the life of the project. |
+| `transient` | RFQ-specific inputs: RFQ template (`05_RFQ*`), datasheets, specs, and any **unmatched** file | Needed only during generation; **deleted from storage once the RFQ has been generated**. |
 
 The deletion of `transient` objects happens in the **Generate** feature (the `retention` tag
 is the hook); intake only records the policy.
@@ -308,9 +308,9 @@ These labels are also the valid values for the `PATCH` override (`DocType` enum)
 |---|---|
 | `01_*` | Employer Technical Specifications |
 | `02_*` | Process Engineering Profile |
-| `03_RFQ*` | RFQ Template |
+| `03_*` | Equipment List |
 | `04_*` | Hydraulic Calculation Profile |
-| `05_*` | Equipment List |
+| `05_RFQ*` | RFQ Template |
 | `General Motors Specs*` | General Motor Specifications |
 | `GENERAL MECHANICAL WORKS*` | General Mechanical Works Specs |
 | `Local control panels DataSheet*` | Local Control Panel DataSheet |
