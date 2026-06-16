@@ -31,7 +31,9 @@ def render_xlsx(generation: RFQGeneration) -> bytes:
         sheet.append(["Equipment Category", generation.equipment_category])
     for key, value in generation.header.items():
         sheet.append([key, value])
-    if sheet.max_row >= 1 and (generation.header or generation.equipment_tag):
+    if sheet.max_row >= 1 and (
+        generation.header or generation.equipment_tag or generation.equipment_category
+    ):
         sheet.append([])
 
     for section in generation.sections:

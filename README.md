@@ -247,7 +247,7 @@ Every extracted value must be auditable: traceable to a source, assigned a confi
 
 > **v1 implementation note.** `POST /api/v1/projects/{id}/rfqs` takes the RFQ template as a multipart upload plus an `equipment` name and produces the datasheet via **map-reduce**: each project source document is extracted in its own LLM call (run in parallel) for the fields it supports, then a single merge+fill call assembles the complete datasheet (applying precedence/conflict rules). This keeps every call within the model's context window instead of sending the whole project at once. The result JSON is rendered to a **fresh `.xlsx`** (the original template's styling/formulas are **not** preserved in v1) and persisted as a `documents` row (`doc_type="RFQ Package"`). The uploaded template is converted to Markdown and used transiently. The operating rules live in `system_prompt.md`. High-fidelity template filling, intra-document chunking, relevance filtering, and background-job execution are documented follow-ups. See `backend/docs/rfq-generation.md`.
 
-Templates are **fixed and immutable per equipment type** — the engineering team authors one canonical template per equipment category (e.g. one blower template, one RAS pump template, one mixer template). These templates live **outside** this system; the engineer uploads the appropriate template(s) in the same batch as the source documents (§F-01), classified via the `03_RFQ*` filename pattern (§F-02). See §F-11 for template handling. The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Template structure, headers, formulas, and conditional formatting are preserved byte-for-byte in the output.
+Templates are **fixed and immutable per equipment type** — the engineering team authors one canonical template per equipment category (e.g. one blower template, one RAS pump template, one mixer template). These templates live **outside** this system. The **target** intake (§F-11) is for the engineer to upload the appropriate template(s) in the same batch as the source documents (§F-01), classified via the `05_RFQ*` filename pattern (§F-02); **in v1 the template is instead supplied directly to `POST /api/v1/projects/{id}/rfqs` as a multipart upload** (see the v1 note above). The LLM populates the predefined editable cells only — it does not create, modify, or restructure templates under any circumstances. Byte-for-byte preservation of template structure, headers, formulas, and conditional formatting in the output is the **target** fidelity; **v1 renders a fresh `.xlsx` and does not yet preserve the original styling/formulas** (a documented follow-up — see the v1 note above).
 
 > The eight template structures below are **illustrative examples** derived from past Wabag projects (see Appendix A). They document what the engineer-authored canonical templates typically look like for common equipment types; the system does not bundle these templates — they arrive with the engineer's upload batch.
 
@@ -380,7 +380,7 @@ Unit conversions applied where needed (m³/hr ↔ L/s, bar ↔ psi, °C ↔ °F,
 
 ### F-08: RFQ Output
 
-The system produces a **single Excel file (`.xlsx`)** as the RFQ deliverable. The file preserves the fixed template structure exactly — formulas, conditional formatting, merged cells, and styling are carried through untouched. Only the editable cells defined in the template schema are populated. The engineer downloads this single file; no additional package, zip, or supplementary assembly is produced.
+The system produces a **single Excel file (`.xlsx`)** as the RFQ deliverable. **Target** fidelity: the file preserves the fixed template structure exactly — formulas, conditional formatting, merged cells, and styling are carried through untouched, with only the editable cells defined in the template schema populated. **v1 deviation:** v1 renders a *fresh* `.xlsx` from the extracted JSON and does **not** yet carry through the original template's styling/formulas (high-fidelity template filling is a documented follow-up — see §F-06). The engineer downloads this single file; no additional package, zip, or supplementary assembly is produced.
 
 ### F-09: Audit Trail & Change Log
 
@@ -397,7 +397,7 @@ The audit trail is the definitive record of how each cell in the output Excel wa
 
 ### F-11: Template Handling
 
-The system does **not** maintain a server-side template library. Templates are authored and versioned by the engineering team externally, and uploaded with each project batch (classified via the `05_RFQ*` filename pattern, §F-02).
+The system does **not** maintain a server-side template library. Templates are authored and versioned by the engineering team externally. **Target** intake: uploaded with each project batch and classified via the `05_RFQ*` filename pattern (§F-02). **v1 deviation:** the template is supplied directly to `POST /api/v1/projects/{id}/rfqs` as a multipart upload alongside an `equipment` name, converted to Markdown, and used transiently (it is not stored or classified as a `05_RFQ*` batch document — see §F-06).
 
 - Engineers upload one canonical fixed template per equipment type in the batch (e.g. blower datasheet, RAS pump datasheet, mixer datasheet — see §F-06 for illustrative structures)
 - Uploaded templates are treated as immutable inputs: the system only populates predefined editable cells; it never alters structure, headers, formulas, merged cells, or conditional formatting (F-04.R6)
@@ -622,7 +622,7 @@ Single Excel file download
 - **Database:** PostgreSQL 16, Supabase
 - **LLM:** OpenRouter (opus / sonnet)
 - **Document Processing:** pypdf, python-docx, openpyxl, xlrd (for legacy .xls), Pillow
-- **Excel Generation:** openpyxl (with formula and conditional formatting preservation)
+- **Excel Generation:** openpyxl (v1 renders a fresh `.xlsx`; formula/conditional-formatting preservation is a documented follow-up — see §F-06/§F-08)
 - **Migrations:** Alembic
 - **Package Manager:** uv
 - **Code Quality:** ruff, mypy (strict), pytest (80% coverage floor)

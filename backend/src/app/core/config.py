@@ -88,8 +88,9 @@ class Settings(BaseSettings):
     # streamed so long thinking generations don't hit the provider's non-streaming window.
     LLM_REASONING_EFFORT: LLMReasoningEffort = "xhigh"
     # Max concurrent per-document extraction calls during map-reduce RFQ generation (bounds the
-    # async fan-out so we don't hammer the provider's rate limits).
-    RFQ_MAX_CONCURRENT_EXTRACTIONS: int = 12
+    # async fan-out so we don't hammer the provider's rate limits). Must be >= 1: a zero/negative
+    # value yields a semaphore that never admits a task and would hang the request path.
+    RFQ_MAX_CONCURRENT_EXTRACTIONS: int = Field(default=12, ge=1)
     SYSTEM_RULES: Annotated[list[str], NoDecode] = Field(
         default_factory=_default_system_rules,
     )

@@ -49,7 +49,7 @@ def _slug(text: str) -> str:
     status_code=status.HTTP_201_CREATED,
     response_model=RFQGenerationResponse,
 )
-async def generate_project_rfq(
+async def generate_project_rfq(  # noqa: PLR0915
     project_id: uuid.UUID,
     db: DbSession,
     storage: Storage,
@@ -58,11 +58,12 @@ async def generate_project_rfq(
     file: Annotated[UploadFile, File()],
     equipment: Annotated[str, Form(min_length=1)],
 ) -> RFQGenerationResponse:
-    """Generate an RFQ datasheet for ``equipment`` from the project's documents (one LLM call).
+    """Generate an RFQ datasheet for ``equipment`` from the project's documents(multiple LLM calls).
 
     The client POSTs the RFQ template (multipart ``file``) plus the ``equipment`` name. The template
     is validated and converted to Markdown in-memory (never stored); every project source document's
-    stored Markdown is downloaded; a single LLM call fills the template; the JSON result is rendered
+    stored Markdown is downloaded; Multiple LLM calls for data extraction and one final LLM call
+    for merging and filling the JSON result (MapReduce approach); the JSON result is rendered
     to a fresh ``.xlsx``, stored, and persisted as a ``documents`` row. Errors: 415 (bad template
     type), 422 (unparseable template / no source documents), 502 (LLM produced invalid JSON or a
     storage op failed), 503 (LLM unavailable), 404 (project missing).
@@ -153,8 +154,22 @@ async def generate_project_rfq(
         retention=RetentionPolicy.PERSISTENT,
     )
     db.add(document)
-    await db.flush()
-    await db.refresh(document)
+    try:
+        await db.flush()
+        await db.refresh(document)
+    except Exception:
+        # The object is uploaded but the row failed to persist; remove the orphan so
+        # storage and DB stay consistent (best-effort — log if cleanup also fails).
+        try:
+            await storage.from_(bucket).remove([storage_path])
+        except StorageException as cleanup_exc:
+            logger.warning(
+                "failed to remove orphaned RFQ object %s/%s after persist failure: %s",
+                bucket,
+                storage_path,
+                cleanup_exc,
+            )
+        raise
     return RFQGenerationResponse(
         document=DocumentRead.model_validate(document), summary=summarize(generation)
     )

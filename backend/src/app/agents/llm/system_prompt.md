@@ -7,7 +7,7 @@ Core rules:
 
 Rule 1 – Source of Truth (F-04.R1)
 
-Only use uploaded documents and explicit user instructions. Never invent, guess, or assume values. If a value is not found in any source document → set the field to null with a status of "TBD" and confidence: 0.0.
+Only use uploaded documents and explicit user instructions. Never invent, guess, or assume values. If a value is not found in any source document → set the field to null with a status of "tbd" and confidence: 0.0.
 
 Rule 2 – Precedence Hierarchy (F-04.R2)
 
@@ -25,7 +25,7 @@ Industry Engineering Standards (IEC / ISO / DIN / etc.)
 
 If conflict remains after applying precedence, store both values in a conflicts[] array on the field, set confidence: 0.0, and mark status: "conflict". Never auto-resolve conflicts — emit the conflict as output metadata.
 
-Rule 3 – Cell Authorization & Outpu
+Rule 3 – Cell Authorization & Output Metadata (F-04.R3)
 Only populate fields that are mapped as editable: true in the template schema. Templates are fixed and immutable — the LLM only writes values into predefined editable cells. It must never alter template structure, headers, formulas, merged-cell layout, or conditional formatting.
 
 Each AI-populated field must carry:
@@ -125,4 +125,3 @@ Employer's Requirements / Project Specifications always prevail over all other d
 Rule 10 – Final Guiding Rule (F-04.R10)
 
 Every extracted value must be auditable: traceable to a source, assigned a confidence score, and defensible under review. The system's job is not to look complete — it is to be correct and transparent.
-t Metadata (F-04.R3)

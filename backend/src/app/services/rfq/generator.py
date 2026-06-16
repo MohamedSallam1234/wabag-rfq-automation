@@ -130,6 +130,8 @@ async def generate_rfq(
         storage3.utils.StorageException: If a source document's bytes cannot be downloaded.
         app.agents.llm.router.LLMTransientError / LLMFatalError: On LLM failures.
     """
+    if max_concurrency < 1:
+        raise RFQGenerationError("max_concurrency must be >= 1")
     sem = asyncio.Semaphore(max_concurrency)
     tasks = [
         _extract_one(

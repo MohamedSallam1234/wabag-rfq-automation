@@ -69,7 +69,7 @@ def test_xlsx_truncates_large_sheet(tmp_path: Path, monkeypatch: pytest.MonkeyPa
             sheet.append([f"r{row}c{col}" for col in range(4)])
 
     markdown, _ = extract_xlsx_markdown(_xlsx_path(tmp_path, build))
-    assert "> _Truncated: showing first 2 of 4 rows; columns past 2 omitted._" in markdown
+    assert "> _Truncated: showing first 2 rows; columns past 2 omitted._" in markdown
 
 
 def test_xlsx_drops_empty_rows_and_columns(tmp_path: Path) -> None:

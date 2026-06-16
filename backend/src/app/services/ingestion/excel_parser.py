@@ -34,23 +34,28 @@ def _is_blank(value: object) -> bool:
 
 def _collect_rows(
     row_iter: Iterable[Sequence[object]], max_rows: int, max_cols: int
-) -> tuple[list[list[object]], int, bool]:
+) -> tuple[list[list[object]], bool, bool]:
     """Drain ``row_iter``, keeping at most ``max_rows`` rows of at most ``max_cols`` columns.
 
-    Returns the kept rows (each clipped to ``max_cols``), the total number of rows seen, and
-    whether any *non-blank* data was dropped past the column cap. Empty rows/columns are not
-    removed here — that compaction happens in :func:`_compact` once the block is known.
+    Returns the kept rows (each clipped to ``max_cols``), whether any rows past ``max_rows`` were
+    dropped, and whether any *non-blank* data was dropped past the column cap. Iteration stops at
+    the first row beyond ``max_rows`` so cost stays bounded by the caps rather than the sheet's
+    full (possibly abusive) used range — that one peek row is enough to flag the truncation. Empty
+    rows/columns are not removed here — that compaction happens in :func:`_compact` once the block
+    is known.
     """
     kept: list[list[object]] = []
-    total_rows = 0
+    rows_truncated = False
     cols_truncated = False
     for row in row_iter:
-        total_rows += 1
         if len(row) > max_cols and any(not _is_blank(cell) for cell in row[max_cols:]):
             cols_truncated = True
         if len(kept) < max_rows:
             kept.append(list(row[:max_cols]))
-    return kept, total_rows, cols_truncated
+        else:
+            rows_truncated = True
+            break
+    return kept, rows_truncated, cols_truncated
 
 
 def _compact(rows: list[list[object]]) -> list[list[object]]:
@@ -72,7 +77,7 @@ def _compact(rows: list[list[object]]) -> list[list[object]]:
 
 
 def _render_sheet(
-    name: str, kept: list[list[object]], total_rows: int, cols_truncated: bool
+    name: str, kept: list[list[object]], rows_truncated: bool, cols_truncated: bool
 ) -> str:
     """Render one sheet as a ``## {name}`` heading plus a compacted GFM table (or empty marker)."""
     heading = f"## {name}"
@@ -81,8 +86,8 @@ def _render_sheet(
         return f"{heading}\n\n{_EMPTY_SHEET_MARKER}"
     table = gfm_table(compact)
     notes: list[str] = []
-    if total_rows > len(kept):
-        notes.append(f"showing first {len(kept)} of {total_rows} rows")
+    if rows_truncated:
+        notes.append(f"showing first {len(kept)} rows")
     if cols_truncated:
         notes.append(f"columns past {_MAX_COLS_PER_SHEET} omitted")
     if notes:
@@ -105,10 +110,10 @@ def extract_xlsx_markdown(path: str) -> tuple[str, list[str]]:
         blocks = []
         for name in sheet_names:
             worksheet = workbook[name]
-            kept, total_rows, cols_truncated = _collect_rows(
+            kept, rows_truncated, cols_truncated = _collect_rows(
                 worksheet.iter_rows(values_only=True), _MAX_ROWS_PER_SHEET, _MAX_COLS_PER_SHEET
             )
-            blocks.append(_render_sheet(name, kept, total_rows, cols_truncated))
+            blocks.append(_render_sheet(name, kept, rows_truncated, cols_truncated))
     finally:
         workbook.close()
     return "\n\n".join(blocks), sheet_names
@@ -143,10 +148,10 @@ def extract_xls_markdown(path: str) -> tuple[str, list[str]]:
         blocks = []
         for name in sheet_names:
             sheet = book.sheet_by_name(name)
-            kept, total_rows, cols_truncated = _collect_rows(
+            kept, rows_truncated, cols_truncated = _collect_rows(
                 _xls_rows(book, sheet), _MAX_ROWS_PER_SHEET, _MAX_COLS_PER_SHEET
             )
-            blocks.append(_render_sheet(name, kept, total_rows, cols_truncated))
+            blocks.append(_render_sheet(name, kept, rows_truncated, cols_truncated))
     finally:
         book.release_resources()
     return "\n\n".join(blocks), sheet_names
