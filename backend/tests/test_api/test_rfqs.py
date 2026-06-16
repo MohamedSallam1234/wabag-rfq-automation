@@ -33,7 +33,9 @@ _VALID_JSON = json.dumps(
                         "value": 860,
                         "unit": "m3/hr",
                         "confidence": 0.9,
-                        "source_ref": "04",
+                        "source_document": "04",
+                        "source_location": "Sheet Design",
+                        "evidence": "design flow 860 m3/hr",
                         "status": "extracted",
                     },
                     {"field": "Head", "value": None, "status": "tbd", "confidence": 0.0},
@@ -149,7 +151,13 @@ def test_generate_rfq_returns_201_and_persists_xlsx() -> None:
     body = response.json()
     assert body["document"]["content_type"] == _XLSX_MIME
     assert body["document"]["original_filename"] == "RFQ_aeration_blower.xlsx"
-    assert body["summary"] == {"fields_total": 2, "extracted": 1, "conflict": 0, "tbd": 1}
+    assert body["summary"] == {
+        "fields_total": 2,
+        "extracted": 1,
+        "conflict": 0,
+        "tbd": 1,
+        "vtf": 0,
+    }
 
     # The generated .xlsx is stored under the per-document key with the xlsx content type.
     proxy.upload.assert_awaited_once()

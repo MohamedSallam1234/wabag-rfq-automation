@@ -32,16 +32,22 @@ Flow:
 
 1. Validate + convert the uploaded template to Markdown in-memory (reuses the F-01 intake pipeline);
    the template is **transient** — never persisted.
-2. Fetch every project source document (excludes previously-generated `RFQ Package` outputs).
-3. **Map (parallel):** one LLM call per source document downloads its stored Markdown and extracts
-   only the template fields that document supports → a *partial* `RFQGeneration`. These run
-   concurrently via `asyncio.gather` (pure async — no threads), bounded by
-   `RFQ_MAX_CONCURRENT_EXTRACTIONS`.
-4. **Reduce (one call):** merges the per-document partials against the template — applying the
-   source-precedence and conflict rules — and fills the complete datasheet (every template field,
-   `tbd` where nothing was found). The operating rules come from the system prompt
-   (`agents/llm/system_prompt.md` → `SYSTEM_RULES`); the per-stage task instructions only frame the
-   task and the JSON contract.
+2. Resolve the source set: every project source document (excludes previously-generated
+   `RFQ Package` outputs), each downloaded from storage and decoded to Markdown. Each source carries
+   a **precedence tier** (see `services/rfq/precedence.py`). A project with no source documents is a
+   `422`.
+3. **Map (parallel):** one LLM call per source document extracts only the template fields that
+   document supports → a *partial* `RFQGeneration`. Each emitted field carries structured provenance
+   (`source_document` / `source_location` / `evidence` quote); the document's **precedence tier** is
+   stamped on the prompt block. These run concurrently via `asyncio.gather` (pure async — no threads),
+   bounded
+   by `RFQ_MAX_CONCURRENT_EXTRACTIONS`.
+4. **Reduce (one call):** merges the per-document partials — each tagged with its precedence tier —
+   against the template, applying the **precedence / Employer's-Golden-Rule / conflict** algorithm
+   over the partials' compact evidence, and fills the complete datasheet (every template field,
+   `tbd` where nothing was found, `vtf` for vendor-scope fields). The universal operating rules come
+   from the system prompt (`agents/llm/system_prompt.md` → `SYSTEM_RULES`); the per-stage task
+   instructions frame the task, the JSON contract, and (for reduce) the precedence algorithm.
 5. Parse the model's JSON into `RFQGeneration`, render a **fresh `.xlsx`** (openpyxl), upload it, and
    persist a `documents` row (`doc_type="RFQ Package"`, `content_type` = the xlsx OOXML type,
    `retention=persistent`).
@@ -51,7 +57,7 @@ Response (`201`): the created document + a status summary.
 ```jsonc
 {
   "document": { /* DocumentRead — id, original_filename "RFQ_aeration_blower.xlsx", content_type, … */ },
-  "summary":  { "fields_total": 42, "extracted": 30, "conflict": 2, "tbd": 10 }
+  "summary":  { "fields_total": 42, "extracted": 30, "conflict": 2, "tbd": 8, "vtf": 2 }
 }
 ```
 
@@ -76,12 +82,14 @@ The model must return a single JSON object (no prose, no code fences):
       "fields": [
         {
           "field": "Capacity",
-          "value": 860,                 // string | number | null
+          "value": 860,                       // string | number | null
           "unit": "m3/hr",
-          "confidence": 0.9,            // 0.0–1.0
-          "source_ref": "04_Hydraulic", // where the value came from
-          "status": "extracted",        // "extracted" | "conflict" | "tbd"
-          "conflicts": null             // [{value, source_ref}, …] when status == "conflict"
+          "confidence": 0.9,                  // 0.0–1.0
+          "source_document": "04_Hydraulic",  // which document
+          "source_location": "Sheet Design, row Flow", // where in it (section/sheet/row/heading)
+          "evidence": "design flow 860 m3/hr",// short verbatim quote
+          "status": "extracted",              // "extracted" | "conflict" | "tbd" | "vtf"
+          "conflicts": null                   // [{value, source_document, source_location, evidence}, …] when "conflict"
         }
       ]
     }
@@ -89,10 +97,27 @@ The model must return a single JSON object (no prose, no code fences):
 }
 ```
 
-The operating rules (source-of-truth / no invention, source precedence, evidence & traceability,
-unit validation, VTF default, calculations, conflict handling, confidence bands) live in
-`system_prompt.md` and are prepended to every call — they are **not** restated in the per-request
-prompt.
+The operating rules (source-of-truth / no invention, source precedence + Employer's Golden Rule,
+evidence & traceability via structured `source_document` / `source_location` / `evidence`, unit
+validation, VTF/scope → `status:"vtf"` with a filled token, calculations, conflict handling with
+≥2 candidates, confidence bands, status semantics) live in `system_prompt.md` and
+are prepended to every call. The **precedence ladder** is the single source of truth in
+`services/rfq/precedence.py` (Employer's Requirements → Process → Hydraulic → Equipment List →
+other/unclassified → Industry Standards) and is stamped onto every source/partial as an
+explicit tier so the reduce stage applies precedence deterministically rather than guessing from
+filenames.
+
+**VTF / scope of supply.** VTF is a property of the *template field*, so the **reduce** stage decides
+it for every template field — including fields no source mentions (it would otherwise default them to
+`tbd`). A field is marked `vtf` when the template signals vendor scope (a Scope/Supply column,
+"(by vendor)", "supplied by", "scope of supply") **or** it is a conventionally vendor-furnished item
+(accessories, painting, testing, spares, internal motor build, **materials of construction** whose
+grade the documents don't state); the cell shows the token (`VTF` / `By Vendor` / `Included`).
+**Scope quantities:** when a scope item states a figure (e.g. "spare parts for 3 years", "24 months
+warranty"), that figure is captured as the value (`extracted`) rather than a generic token.
+**Safety net:** when a vendor-scope field also has a value in a lower-precedence document, the value
+is carried in `conflicts[]` and the cell renders `VTF / <value>` with that value's provenance in the
+source columns — so a real value is never silently dropped.
 
 ## Limitations (v1) / follow-ups
 

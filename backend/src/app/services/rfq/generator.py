@@ -1,23 +1,28 @@
 """Orchestrate map-reduce RFQ generation: parallel per-document extraction → merge + fill.
 
 Each source document is extracted in its own LLM call (fanned out concurrently with
-``asyncio.gather`` — pure async I/O, no threads), producing a partial datasheet. A single reduce
-call then merges those partials against the template and fills the complete datasheet, which we
-render to ``.xlsx``. This keeps every individual call within the model's context window even when
-the whole project would not fit in one call.
+``asyncio.gather`` — pure async I/O, no threads), producing a *partial* datasheet that carries the
+evidence (verbatim quote + ``source_ref``) and the document's precedence tier. A single reduce call
+then merges those partials against the template — applying the precedence/conflict rules over the
+compact evidence — and fills the complete datasheet, which we render to ``.xlsx``. This keeps every
+individual call within the model's context window even when the whole project would not fit in one
+call, while still giving the reduce stage enough evidence to reason across documents.
+
+The orchestrator is **storage-agnostic**: it operates on :class:`SourceDoc` values whose Markdown is
+already resolved by the caller (downloaded from storage for project documents, or converted
+in-memory for files supplied directly in the request).
 """
 
 import asyncio
 import json
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import anyio
 from pydantic import ValidationError
-from storage3 import AsyncStorageClient
 
 from app.agents.llm.router import LLMRouter
-from app.models.document import Document
 from app.schemas.rfq import RFQGeneration, RFQSummary
 from app.services.rfq.prompt import (
     extraction_instructions,
@@ -32,6 +37,20 @@ logger = logging.getLogger(__name__)
 
 class RFQGenerationError(Exception):
     """An LLM response could not be parsed/validated into an :class:`RFQGeneration`."""
+
+
+@dataclass(frozen=True)
+class SourceDoc:
+    """A resolved source document for extraction.
+
+    ``label`` is a human reference (filename + classification) used in prompts and ``source_ref``;
+    ``tier`` is the precedence tier (see :mod:`app.services.rfq.precedence`); ``markdown`` is the
+    document's already-resolved Markdown content.
+    """
+
+    label: str
+    tier: int
+    markdown: str
 
 
 def parse_generation(text: str) -> RFQGeneration:
@@ -56,7 +75,7 @@ def parse_generation(text: str) -> RFQGeneration:
 
 def summarize(generation: RFQGeneration) -> RFQSummary:
     """Count field statuses across the generated datasheet."""
-    counts = {"extracted": 0, "conflict": 0, "tbd": 0}
+    counts = {"extracted": 0, "conflict": 0, "tbd": 0, "vtf": 0}
     total = 0
     for section in generation.sections:
         for field in section.fields:
@@ -67,44 +86,35 @@ def summarize(generation: RFQGeneration) -> RFQSummary:
         extracted=counts["extracted"],
         conflict=counts["conflict"],
         tbd=counts["tbd"],
+        vtf=counts["vtf"],
     )
 
 
-def _doc_label(doc: Document) -> str:
-    """Human label for a source document (filename + classification)."""
-    return f"{doc.original_filename} ({doc.doc_type or 'unclassified'})"
-
-
 async def _extract_one(
-    doc: Document,
+    doc: SourceDoc,
     *,
     equipment: str,
     template_label: str,
     template_md: str,
-    storage: AsyncStorageClient,
-    bucket: str,
     llm: LLMRouter,
     sem: asyncio.Semaphore,
-) -> tuple[str, RFQGeneration]:
-    """Map step: download one document's Markdown and extract its supported fields.
+) -> tuple[SourceDoc, RFQGeneration]:
+    """Map step: extract one document's supported fields (with evidence + its precedence tier).
 
-    Returns ``(document_label, partial_generation)``. Failures are logged with the document label
-    and re-raised so the caller can fail the whole request (a dropped source is not acceptable).
+    Returns ``(source_doc, partial_generation)``. Failures are logged with the document label and
+    re-raised so the caller can fail the whole request (a dropped source is not acceptable).
     """
-    label = _doc_label(doc)
     try:
-        raw = await storage.from_(bucket).download(doc.storage_path)
-        markdown = raw.decode("utf-8")
         async with sem:
             text = await llm.ask(
                 user_message=extraction_message(
-                    equipment, template_label, template_md, label, markdown
+                    equipment, template_label, template_md, doc.label, doc.tier, doc.markdown
                 ),
                 task_instructions=extraction_instructions(equipment),
             )
-        return label, parse_generation(text)
+        return doc, parse_generation(text)
     except Exception:
-        logger.warning("RFQ extraction failed for document %s", label)
+        logger.warning("RFQ extraction failed for document %s", doc.label)
         raise
 
 
@@ -113,21 +123,19 @@ async def generate_rfq(
     equipment: str,
     template_label: str,
     template_md: str,
-    sources: Sequence[Document],
-    storage: AsyncStorageClient,
-    bucket: str,
+    sources: Sequence[SourceDoc],
     llm: LLMRouter,
     max_concurrency: int,
 ) -> tuple[RFQGeneration, bytes]:
     """Generate one equipment's RFQ datasheet via map-reduce; return it and the rendered ``.xlsx``.
 
     Map: extract each source document concurrently (bounded by ``max_concurrency``). Reduce: one
-    call merges the partials against the template and fills the complete datasheet. Render off the
-    event loop.
+    call merges the partials against the template — applying precedence/conflict rules over each
+    partial's evidence and tier — and fills the complete datasheet. Render off the event loop.
 
     Raises:
-        RFQGenerationError: If any LLM response cannot be parsed into an :class:`RFQGeneration`.
-        storage3.utils.StorageException: If a source document's bytes cannot be downloaded.
+        RFQGenerationError: If ``max_concurrency`` < 1 or any LLM response cannot be parsed into an
+            :class:`RFQGeneration`.
         app.agents.llm.router.LLMTransientError / LLMFatalError: On LLM failures.
     """
     if max_concurrency < 1:
@@ -139,16 +147,14 @@ async def generate_rfq(
             equipment=equipment,
             template_label=template_label,
             template_md=template_md,
-            storage=storage,
-            bucket=bucket,
             llm=llm,
             sem=sem,
         )
         for doc in sources
     ]
-    extractions: list[tuple[str, RFQGeneration]] = await asyncio.gather(*tasks)
+    extractions: list[tuple[SourceDoc, RFQGeneration]] = await asyncio.gather(*tasks)
 
-    partials = [(label, partial.model_dump_json()) for label, partial in extractions]
+    partials = [(doc.label, doc.tier, partial.model_dump_json()) for doc, partial in extractions]
     merge_text = await llm.ask(
         user_message=merge_message(equipment, template_label, template_md, partials),
         task_instructions=merge_instructions(equipment),

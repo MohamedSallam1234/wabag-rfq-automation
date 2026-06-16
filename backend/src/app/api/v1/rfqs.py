@@ -1,5 +1,6 @@
 """Generate a populated RFQ datasheet for one equipment from a project's documents (open)."""
 
+import asyncio
 import logging
 import re
 import uuid
@@ -23,7 +24,13 @@ from app.services.ingestion.validation import (
     plan_storage_path,
     validate_upload_bytes,
 )
-from app.services.rfq.generator import RFQGenerationError, generate_rfq, summarize
+from app.services.rfq.generator import (
+    RFQGenerationError,
+    SourceDoc,
+    generate_rfq,
+    summarize,
+)
+from app.services.rfq.precedence import precedence_tier
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +51,24 @@ def _slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_") or "equipment"
 
 
+def _doc_label(filename: str, doc_type: str | None) -> str:
+    """Human label for a source document (filename + classification)."""
+    return f"{filename} ({doc_type or 'unclassified'})"
+
+
+async def _download_source(
+    doc: Document, *, storage: AsyncStorageClient, bucket: str, sem: asyncio.Semaphore
+) -> SourceDoc:
+    """Resolve a stored project document into a :class:`SourceDoc` (download + decode Markdown)."""
+    async with sem:
+        raw = await storage.from_(bucket).download(doc.storage_path)
+    return SourceDoc(
+        label=_doc_label(doc.original_filename, doc.doc_type),
+        tier=precedence_tier(doc.doc_type),
+        markdown=raw.decode("utf-8"),
+    )
+
+
 @router.post(
     "/projects/{project_id}/rfqs",
     status_code=status.HTTP_201_CREATED,
@@ -62,13 +87,14 @@ async def generate_project_rfq(  # noqa: PLR0915
 
     The client POSTs the RFQ template (multipart ``file``) plus the ``equipment`` name. The template
     is validated and converted to Markdown in-memory (never stored); every project source document's
-    stored Markdown is downloaded; Multiple LLM calls for data extraction and one final LLM call
-    for merging and filling the JSON result (MapReduce approach); the JSON result is rendered
-    to a fresh ``.xlsx``, stored, and persisted as a ``documents`` row. Errors: 415 (bad template
-    type), 422 (unparseable template / no source documents), 502 (LLM produced invalid JSON or a
-    storage op failed), 503 (LLM unavailable), 404 (project missing).
+    stored Markdown is downloaded. Multiple LLM calls extract data per document and one final LLM
+    call merges and fills the JSON result (map-reduce); the JSON result is rendered to a fresh
+    ``.xlsx``, stored, and persisted as a ``documents`` row. Errors: 415 (bad template type),
+    422 (unparseable template / no source documents), 502 (LLM produced invalid JSON or a storage
+    op failed), 503 (LLM unavailable), 404 (project missing).
     """
     project = await load_project_or_404(db, project_id)
+    bucket = settings.SUPABASE_STORAGE_BUCKET
 
     # Convert the uploaded template to Markdown in-memory (reuse the intake pipeline); not stored.
     template_filename = file.filename or ""
@@ -86,27 +112,39 @@ async def generate_project_rfq(  # noqa: PLR0915
     template_md = validated.data.decode("utf-8")
     template_label = f"{template_filename} (RFQ Template)"
 
-    # Source context = every project document except previously-generated RFQ outputs.
+    # Source context = every project document except previously-generated RFQ outputs. Resolve each
+    # stored document's Markdown concurrently.
     stmt = select(Document).where(
         Document.project_id == project_id,
         or_(Document.doc_type.is_(None), Document.doc_type != GENERATED_DOC_TYPE),
     )
-    sources = (await db.execute(stmt)).scalars().all()
+    db_documents = (await db.execute(stmt)).scalars().all()
+    sem = asyncio.Semaphore(settings.RFQ_MAX_CONCURRENT_EXTRACTIONS)
+    try:
+        sources = await asyncio.gather(
+            *(
+                _download_source(doc, storage=storage, bucket=bucket, sem=sem)
+                for doc in db_documents
+            )
+        )
+    except StorageException as exc:
+        logger.warning("RFQ generation could not read a source document: %s", exc)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "Could not read a source document"
+        ) from exc
+
     if not sources:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Project has no source documents to generate from",
         )
 
-    bucket = settings.SUPABASE_STORAGE_BUCKET
     try:
         generation, xlsx_bytes = await generate_rfq(
             equipment=equipment,
             template_label=template_label,
             template_md=template_md,
             sources=sources,
-            storage=storage,
-            bucket=bucket,
             llm=llm,
             max_concurrency=settings.RFQ_MAX_CONCURRENT_EXTRACTIONS,
         )
@@ -120,11 +158,6 @@ async def generate_project_rfq(  # noqa: PLR0915
         logger.warning("RFQ generation produced unusable output: %s", exc)
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "The model returned an invalid RFQ"
-        ) from exc
-    except StorageException as exc:
-        logger.warning("RFQ generation could not read a source document: %s", exc)
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, "Could not read a source document"
         ) from exc
 
     document_id = uuid.uuid4()
