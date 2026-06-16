@@ -20,15 +20,17 @@ them by filename — all in a single synchronous request.
   `deep parse` (`PyMuPDF`/`openpyxl`/`python-docx`), with a request-body size cap. An invalid
   file is rejected synchronously (`415`/`422`/`413`) and **nothing is ever stored** — so
   every persisted document is valid and has bytes (no `status` lifecycle to track).
-- **PDFs are slimmed to Markdown at upload.** Employer specs can be 500–1000+ pages and bloated
-  by images/figures/embedded fonts. Born-digital PDFs are converted to a compact Markdown
-  artifact (text **and tables** preserved) via `pymupdf4llm`; only that `.md` is stored
+- **Every supported type is slimmed to Markdown at upload.** Employer specs can be 500–1000+
+  pages and bloated by images/figures/embedded fonts. All accepted types are converted to a
+  compact Markdown artifact (text **and tables** preserved) — PDFs via `pymupdf4llm`, `.docx`
+  via `python-docx`, `.xlsx` via `openpyxl`, `.xls` via `xlrd`. Only that `.md` is stored
   (`content_type=text/markdown`) and the heavy original is discarded — cutting both storage and
-  LLM tokens. A scanned / image-only PDF (no extractable text) is rejected `422` (no OCR).
-  `.docx/.xlsx/.xls` are unchanged (stored as-is) for now.
+  LLM tokens, and giving the downstream F-03 extraction uniform Markdown for every document.
+  A scanned / image-only PDF (no extractable text) is rejected `422` (no OCR); office files are
+  born-digital, so an empty one yields empty/near-empty Markdown rather than a rejection.
 - **Classification** is deterministic filename-prefix matching (no LLM), e.g. `01_*` →
-  *Employer Technical Specifications*, `03_RFQ*` → *RFQ Template*. Engineers can override.
-- **Retention:** project-common docs (`01`/`02`/`04`/`05`) are `persistent`; RFQ-specific
+  _Employer Technical Specifications_, `05_RFQ*` → _RFQ Template_. Engineers can override.
+- **Retention:** project-common docs (`01`/`02`/`03`/`04`) are `persistent`; RFQ-specific
   docs (RFQ template, datasheets, specs) and unmatched files are `transient` (to be deleted
   after the RFQ is generated). Derived from classification; recomputed on override.
 - **No authentication.** Every `/api/v1/**` endpoint is **open** — anyone who can reach the
@@ -45,27 +47,28 @@ them by filename — all in a single synchronous request.
 
 ## 1. What was built
 
-| File | Purpose |
-|---|---|
-| `src/app/models/project.py` | `Project` ORM model (name, location, client, consultant, project_number, capacity). |
-| `src/app/models/document.py` | `Document` ORM model + `DocTypeSource` / `RetentionPolicy` enums (enum columns persist lowercase values via `values_callable`). |
-| `src/app/models/__init__.py` | Registers `Project` and `Document` so Alembic autogenerate sees them. |
-| `src/app/services/ingestion/classifier.py` | Pure filename → `(doc_type, revision_label, revision_number)`; `DocType` enum of known labels; `retention_for(doc_type)` policy. |
-| `src/app/services/ingestion/filetype.py` | Magic-byte sniffing + extension/MIME helpers (no native `libmagic`). |
-| `src/app/services/ingestion/excel_parser.py` / `word_parser.py` | Deep-parse helpers for office files; opening the file is the integrity check. |
-| `src/app/services/ingestion/pdf_text.py` | `extract_pdf_markdown()` — born-digital PDF → Markdown (text + tables) via `pymupdf4llm` (also the PDF integrity check); raises `NoExtractableTextError` for scanned/image-only PDFs. |
-| `src/app/services/ingestion/validation.py` | `validate_upload_bytes()` — streams the upload to a temp file (incoming-size guard), checks magic bytes, deep-parses, slims PDFs to Markdown, enforces the stored-artifact cap; `plan_storage_path()`; `UploadValidationError`. |
-| `src/app/core/supabase.py` | `create_supabase_client()` — secret-key async client built once in the lifespan. |
-| `src/app/api/deps.py` | `get_db` / `get_storage` / `get_router` dependencies + `load_project_or_404` / `load_document_or_404`. |
-| `src/app/api/v1/projects.py` | Project create / list / get. |
-| `src/app/api/v1/documents.py` | `upload` (validate → store → classify → persist) / list / detail / `PATCH` (override) / `DELETE`. |
-| `src/app/api/v1/router.py` | Aggregates the v1 routers; included by `main.py`. |
-| `src/app/schemas/project.py` / `document.py` | Pydantic response models (`storage_bucket`/`storage_path` are never exposed). |
-| `src/app/core/config.py` | Storage/upload settings (bucket, body-size cap, download-URL TTL, client timeout, allowed extensions). |
-| `src/app/main.py` | Lifespan creates/closes the Supabase client and includes the v1 router. |
-| `alembic/versions/0001_initial_schema.py` | Single migration: `app_user` role, enum types, `projects` + `documents`, indexes, FK, and explicit `app_user` GRANTs. |
-| `tests/test_services/*`, `tests/test_api/*`, `tests/test_core/*` | 138 tests, ~97% coverage, no live Postgres/Supabase. |
-| `.env.example`, `pyproject.toml` | Storage/LLM/CORS env keys; `openpyxl` + `pymupdf` mypy overrides; `pymupdf4llm` dep. |
+| File                                                             | Purpose                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/models/project.py`                                      | `Project` ORM model (name, location, client, consultant, project_number, capacity).                                                                                                                                                |
+| `src/app/models/document.py`                                     | `Document` ORM model + `DocTypeSource` / `RetentionPolicy` enums (enum columns persist lowercase values via `values_callable`).                                                                                                    |
+| `src/app/models/__init__.py`                                     | Registers `Project` and `Document` so Alembic autogenerate sees them.                                                                                                                                                              |
+| `src/app/services/ingestion/classifier.py`                       | Pure filename → `(doc_type, revision_label, revision_number)`; `DocType` enum of known labels; `retention_for(doc_type)` policy.                                                                                                   |
+| `src/app/services/ingestion/filetype.py`                         | Magic-byte sniffing + extension/MIME helpers (no native `libmagic`).                                                                                                                                                               |
+| `src/app/services/ingestion/excel_parser.py` / `word_parser.py`  | Office → Markdown converters (`extract_xlsx_markdown`/`extract_xls_markdown`, `extract_docx_markdown`); opening the file is also the integrity check.                                                                              |
+| `src/app/services/ingestion/markdown_table.py`                   | Shared GFM-table rendering (`escape_cell`, `gfm_table`) used by the office converters.                                                                                                                                             |
+| `src/app/services/ingestion/pdf_text.py`                         | `extract_pdf_markdown()` — born-digital PDF → Markdown (text + tables) via `pymupdf4llm` (also the PDF integrity check); raises `NoExtractableTextError` for scanned/image-only PDFs.                                              |
+| `src/app/services/ingestion/validation.py`                       | `validate_upload_bytes()` — streams the upload to a temp file (incoming-size guard), checks magic bytes, slims every supported type to Markdown, enforces the stored-artifact cap; `plan_storage_path()`; `UploadValidationError`. |
+| `src/app/core/supabase.py`                                       | `create_supabase_client()` — secret-key async client built once in the lifespan.                                                                                                                                                   |
+| `src/app/api/deps.py`                                            | `get_db` / `get_storage` / `get_router` dependencies + `load_project_or_404` / `load_document_or_404`.                                                                                                                             |
+| `src/app/api/v1/projects.py`                                     | Project create / list / get.                                                                                                                                                                                                       |
+| `src/app/api/v1/documents.py`                                    | `upload` (validate → store → classify → persist) / list / detail / `PATCH` (override) / `DELETE`.                                                                                                                                  |
+| `src/app/api/v1/router.py`                                       | Aggregates the v1 routers; included by `main.py`.                                                                                                                                                                                  |
+| `src/app/schemas/project.py` / `document.py`                     | Pydantic response models (`storage_bucket`/`storage_path` are never exposed).                                                                                                                                                      |
+| `src/app/core/config.py`                                         | Storage/upload settings (bucket, body-size cap, download-URL TTL, client timeout, allowed extensions).                                                                                                                             |
+| `src/app/main.py`                                                | Lifespan creates/closes the Supabase client and includes the v1 router.                                                                                                                                                            |
+| `alembic/versions/0001_initial_schema.py`                        | Single migration: `app_user` role, enum types, `projects` + `documents`, indexes, FK, and explicit `app_user` GRANTs.                                                                                                              |
+| `tests/test_services/*`, `tests/test_api/*`, `tests/test_core/*` | 138 tests, ~97% coverage, no live Postgres/Supabase.                                                                                                                                                                               |
+| `.env.example`, `pyproject.toml`                                 | Storage/LLM/CORS env keys; `openpyxl` + `pymupdf` mypy overrides; `pymupdf4llm` dep.                                                                                                                                               |
 
 ### Architecture in one picture
 
@@ -79,14 +82,14 @@ them by filename — all in a single synchronous request.
        │                                                        │ 3. stream to temp file,
        │                                                        │    incoming size   → 413
        │                                                        │ 4. magic bytes     → 422
-       │                                                        │ 5. deep parse      → 422
-       │                                                        │ 6. PDF → Markdown   → 422 (no text)
+       │                                                        │ 5. parse→Markdown  → 422
+       │                                                        │ 6. (PDF no text)    → 422
        │                                                        │    + stored-size    → 413
        │                                                        │ 7. classify filename
        │                                                        ▼
        │                                                 ┌─────────────────┐
        │                                                 │ Supabase Storage│  8. upload the artifact
-       │                                                 │ (private bucket)│   (.md for PDFs) → 502
+       │                                                 │ (private bucket)│   (.md for all file types) → 502
        │                                                 └────────┬────────┘
        │     201 Created (the persisted Document)                │ 9. insert row, commit
        └─────────────────────────────────────────────────────────
@@ -104,21 +107,21 @@ owner-scoping. A missing project/document returns **404**.
 
 ### Projects
 
-| Method & path | Purpose |
-|---|---|
-| `POST /api/v1/projects` | Create a project. |
-| `GET /api/v1/projects` | List all projects (newest first). |
-| `GET /api/v1/projects/{project_id}` | Fetch one (404 if missing). |
+| Method & path                       | Purpose                           |
+| ----------------------------------- | --------------------------------- |
+| `POST /api/v1/projects`             | Create a project.                 |
+| `GET /api/v1/projects`              | List all projects (newest first). |
+| `GET /api/v1/projects/{project_id}` | Fetch one (404 if missing).       |
 
 ### Documents
 
-| Method & path | Purpose | Notable responses |
-|---|---|---|
-| `POST /api/v1/projects/{project_id}/documents` | **Upload** (multipart, field `file`): validate → (PDF→Markdown) → store → classify → persist. | `201` (the document); `415` bad extension; `422` content/extension mismatch, unparseable, or a PDF with no extractable text; `413` body over the incoming cap or artifact over the stored cap; `404` project missing; `502` storage upload failed. |
-| `GET /api/v1/projects/{project_id}/documents` | List a project's documents (classification), newest first. | `200`; `404` project missing. |
-| `GET /api/v1/documents/{document_id}` | Document metadata + a short-lived signed **download** URL. | `200`; `404`; `502` if a download URL can't be minted. |
-| `PATCH /api/v1/documents/{document_id}` | Override classification (`doc_type`); sets `doc_type_source=manual`, recomputes `retention`. | `200`; `422` unknown `doc_type`. |
-| `DELETE /api/v1/documents/{document_id}` | Delete the row + best-effort remove the storage object (orphans on storage failure are logged). | `204`. |
+| Method & path                                  | Purpose                                                                                            | Notable responses                                                                                                                                                                                                                                  |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/projects/{project_id}/documents` | **Upload** (multipart, field `file`): validate → convert to Markdown → store → classify → persist. | `201` (the document); `415` bad extension; `422` content/extension mismatch, unparseable, or a PDF with no extractable text; `413` body over the incoming cap or artifact over the stored cap; `404` project missing; `502` storage upload failed. |
+| `GET /api/v1/projects/{project_id}/documents`  | List a project's documents (classification), newest first.                                         | `200`; `404` project missing.                                                                                                                                                                                                                      |
+| `GET /api/v1/documents/{document_id}`          | Document metadata + a short-lived signed **download** URL.                                         | `200`; `404`; `502` if a download URL can't be minted.                                                                                                                                                                                             |
+| `PATCH /api/v1/documents/{document_id}`        | Override classification (`doc_type`); sets `doc_type_source=manual`, recomputes `retention`.       | `200`; `422` unknown `doc_type`.                                                                                                                                                                                                                   |
+| `DELETE /api/v1/documents/{document_id}`       | Delete the row + best-effort remove the storage object (orphans on storage failure are logged).    | `204`.                                                                                                                                                                                                                                             |
 
 ### Upload request / response
 
@@ -132,23 +135,24 @@ owner-scoping. A missing project/document returns **404**.
   "id": "…",
   "project_id": "…",
   "original_filename": "01_Employer_Technical_Specifications_Rev02.pdf",
-  "content_type": "text/markdown",  // PDFs are slimmed to a .md artifact; office files keep their MIME
-  "size_bytes": 48000,              // the .md size (far smaller than the original PDF)
+  "content_type": "text/markdown", // every type is slimmed to a .md artifact
+  "size_bytes": 48000, // the .md size (far smaller than the original)
   "doc_type": "Employer Technical Specifications",
   "doc_type_source": "auto",
   "revision_label": "Rev02",
   "revision_number": 2,
-  "page_count": 12,          // the original PDF's page count
-  "sheet_names": null,       // .xlsx returns its sheet names here instead
+  "page_count": 12, // PDFs only (null for office types)
+  "sheet_names": null, // .xlsx/.xls return their sheet names here instead
   "retention": "persistent",
   "created_at": "…",
-  "updated_at": "…"
+  "updated_at": "…",
 }
 ```
 
-> The stored object for a PDF is `{project_id}/{document_id}.md` (`text/markdown`); the
-> `download_url` therefore serves Markdown, not the original PDF. `original_filename` keeps the
-> `.pdf` name (and drives classification).
+> The stored object is always Markdown at key
+> `projects/{project_id}/documents/{document_id}/{original_filename}.md` (`text/markdown`); the
+> `download_url` therefore serves Markdown, not the original file. `original_filename` keeps the
+> source name incl. its extension (and drives classification).
 
 The document detail endpoint adds a `download_url` (signed, short-lived). Since every stored
 document has bytes, the URL is always populated; if signing fails the endpoint returns `502`.
@@ -162,7 +166,7 @@ Intake is now a single multipart `POST` — plain HTTP, no token, no direct-to-S
 ### 3.1 TypeScript types
 
 ```ts
-type DocTypeSource   = "auto" | "manual";
+type DocTypeSource = "auto" | "manual";
 type RetentionPolicy = "persistent" | "transient";
 
 interface DocumentRead {
@@ -171,19 +175,19 @@ interface DocumentRead {
   original_filename: string;
   content_type: string;
   size_bytes: number | null;
-  doc_type: string | null;           // null until classified/overridden
+  doc_type: string | null; // null until classified/overridden
   doc_type_source: DocTypeSource;
   revision_label: string | null;
   revision_number: number | null;
-  page_count: number | null;         // PDFs
-  sheet_names: string[] | null;      // .xlsx
+  page_count: number | null; // PDFs only
+  sheet_names: string[] | null; // .xlsx/.xls
   retention: RetentionPolicy;
-  created_at: string;                // ISO-8601
+  created_at: string; // ISO-8601
   updated_at: string;
 }
 
 interface DocumentDetail extends DocumentRead {
-  download_url: string;              // signed, short-lived
+  download_url: string; // signed, short-lived
 }
 ```
 
@@ -193,20 +197,26 @@ interface DocumentDetail extends DocumentRead {
 const API_BASE = "/api/v1";
 
 /** Upload one file; resolves with the created (already-validated) document. */
-async function uploadDocument(projectId: string, file: File): Promise<DocumentRead> {
+async function uploadDocument(
+  projectId: string,
+  file: File,
+): Promise<DocumentRead> {
   const form = new FormData();
-  form.append("file", file);                       // field name MUST be "file"
+  form.append("file", file); // field name MUST be "file"
 
   const res = await fetch(`${API_BASE}/projects/${projectId}/documents`, {
     method: "POST",
-    body: form,                                     // do NOT set Content-Type; the browser
-  });                                               // sets the multipart boundary itself
-  if (!res.ok) throw await apiError(res);           // 415 / 422 / 413 / 404 / 502
-  return res.json();                                // 201 — fully classified, bytes stored
+    body: form, // do NOT set Content-Type; the browser
+  }); // sets the multipart boundary itself
+  if (!res.ok) throw await apiError(res); // 415 / 422 / 413 / 404 / 502
+  return res.json(); // 201 — fully classified, bytes stored
 }
 
 async function apiError(res: Response): Promise<Error> {
-  const detail = await res.json().then((b) => b?.detail).catch(() => res.statusText);
+  const detail = await res
+    .json()
+    .then((b) => b?.detail)
+    .catch(() => res.statusText);
   return Object.assign(new Error(detail), { status: res.status });
 }
 ```
@@ -238,20 +248,20 @@ await fetch(`${API_BASE}/documents/${documentId}`, { method: "DELETE" });
 
 ### 3.4 Error handling
 
-| Code | Meaning | What the UI should do |
-|---|---|---|
-| `404` | Project/document not found | Treat as "doesn't exist". |
-| `415` | Extension not allowed | Tell the user the allowed types (`.pdf/.docx/.xlsx/.xls`). |
+| Code  | Meaning                                                                                                                                                             | What the UI should do                                                                                                                            |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `404` | Project/document not found                                                                                                                                          | Treat as "doesn't exist".                                                                                                                        |
+| `415` | Extension not allowed                                                                                                                                               | Tell the user the allowed types (`.pdf/.docx/.xlsx/.xls`).                                                                                       |
 | `422` | Content doesn't match the extension, the file is unparseable, or a PDF has no extractable **text layer** (image-only: scanned, "Print to PDF", or text-as-outlines) | Ask for a valid file of the stated type; for PDFs, a **text-based** PDF (or the original Word/Excel source). The message names the likely cause. |
-| `413` | Body over the incoming cap (`MAX_UPLOAD_SIZE_MB`) or the stored artifact over `MAX_STORED_ARTIFACT_MB` | Show the relevant limit. |
-| `502` | Storage upload/sign failed (transient) | Retry shortly. |
+| `413` | Body over the incoming cap (`MAX_UPLOAD_SIZE_MB`) or the stored artifact over `MAX_STORED_ARTIFACT_MB`                                                              | Show the relevant limit.                                                                                                                         |
+| `502` | Storage upload/sign failed (transient)                                                                                                                              | Retry shortly.                                                                                                                                   |
 
 ### 3.5 Gotchas
 
 - **Field name is `file`.** The multipart part must be named `file`.
 - **Don't set `Content-Type` manually** on the upload — let the browser set the multipart
   boundary (only relevant if you hand-build the request instead of using `FormData`).
-- **Upload is synchronous and authoritative.** A `201` means the file is validated *and*
+- **Upload is synchronous and authoritative.** A `201` means the file is validated _and_
   stored; there is no follow-up poll. A `4xx` means nothing was stored — just re-try with a
   corrected file.
 
@@ -284,10 +294,10 @@ evolve without migrations), `doc_type_source` (`auto`/`manual` enum), `revision_
 `retention` is derived from the classification (`retention_for(doc_type)`) at upload and
 **recomputed when the classification is overridden** via `PATCH`:
 
-| Retention | Documents | Lifecycle |
-|---|---|---|
-| `persistent` | Project-common inputs: `01_*` Employer, `02_*` Process, `04_*` Hydraulic, `05_*` Equipment List (and, later, the generated RFQ output) | Kept for the life of the project. |
-| `transient` | RFQ-specific inputs: RFQ template (`03_RFQ*`), datasheets, specs, and any **unmatched** file | Needed only during generation; **deleted from storage once the RFQ has been generated**. |
+| Retention    | Documents                                                                                                                              | Lifecycle                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `persistent` | Project-common inputs: `01_*` Employer, `02_*` Process, `03_*` Equipment List, `04_*` Hydraulic (and, later, the generated RFQ output) | Kept for the life of the project.                                                        |
+| `transient`  | RFQ-specific inputs: RFQ template (`05_RFQ*`), datasheets, specs, and any **unmatched** file                                           | Needed only during generation; **deleted from storage once the RFQ has been generated**. |
 
 The deletion of `transient` objects happens in the **Generate** feature (the `retention` tag
 is the hook); intake only records the policy.
@@ -300,20 +310,20 @@ Deterministic, ordered, first-match-wins (`src/app/services/ingestion/classifier
 **Tender-section patterns (SectionII–SectionVII) are intentionally excluded** (out of scope).
 These labels are also the valid values for the `PATCH` override (`DocType` enum).
 
-| Pattern (case-insensitive) | `doc_type` |
-|---|---|
-| `01_*` | Employer Technical Specifications |
-| `02_*` | Process Engineering Profile |
-| `03_RFQ*` | RFQ Template |
-| `04_*` | Hydraulic Calculation Profile |
-| `05_*` | Equipment List |
-| `General Motors Specs*` | General Motor Specifications |
-| `GENERAL MECHANICAL WORKS*` | General Mechanical Works Specs |
-| `Local control panels DataSheet*` | Local Control Panel DataSheet |
-| `Authorization letter*` | RFQ Authorization Letter |
-| `*DataSheet*.pdf` | Equipment DataSheet |
-| `*Specs*.pdf` | Equipment Specification Document |
-| *(no match)* | `null` (engineer sets it via `PATCH`) |
+| Pattern (case-insensitive)        | `doc_type`                            |
+| --------------------------------- | ------------------------------------- |
+| `01_*`                            | Employer Technical Specifications     |
+| `02_*`                            | Process Engineering Profile           |
+| `03_*`                            | Equipment List                        |
+| `04_*`                            | Hydraulic Calculation Profile         |
+| `05_RFQ*`                         | RFQ Template                          |
+| `General Motors Specs*`           | General Motor Specifications          |
+| `GENERAL MECHANICAL WORKS*`       | General Mechanical Works Specs        |
+| `Local control panels DataSheet*` | Local Control Panel DataSheet         |
+| `Authorization letter*`           | RFQ Authorization Letter              |
+| `*DataSheet*.pdf`                 | Equipment DataSheet                   |
+| `*Specs*.pdf`                     | Equipment Specification Document      |
+| _(no match)_                      | `null` (engineer sets it via `PATCH`) |
 
 **Revision detection** parses `Rev00`, `Rev01`, `rev.01`, `Rev 02`, `Rev000`, `Rev00a`,
 etc. → `revision_number` (int) + `revision_label` (raw text). `revision_sort_key()` gives
@@ -325,36 +335,40 @@ number).
 ## 6. Design decisions you should know about
 
 1. **Single synchronous upload, validate-before-store.** The client POSTs the file; the
-   backend validates the received bytes *first* and only uploads to Supabase if they pass.
+   backend validates the received bytes _first_ and only uploads to Supabase if they pass.
    An invalid file is a synchronous `415`/`422`/`413` and nothing is stored. This removes an
    entire class of machinery the earlier design needed (signed-upload handshake, a `status`
    lifecycle, background validation, a stuck-`processing` recovery loop, FAILED-state cleanup).
 2. **Memory is bounded.** The upload is streamed to a temp file in 1 MB chunks while the
    incoming-size cap is enforced on the running total (`413` aborts early). Two caps apply:
-   the **incoming** body cap (`MAX_UPLOAD_SIZE_MB`, generous because the original PDF is
+   the **incoming** body cap (`MAX_UPLOAD_SIZE_MB`, generous because the original is
    discarded) and the **stored-artifact** cap (`MAX_STORED_ARTIFACT_MB`, matching the bucket
    `file_size_limit`) checked against the final bytes to store.
 3. **The deep parse is the authoritative type gate.** `.docx` and `.xlsx` are both ZIP
    (OOXML) containers and share magic bytes, so the magic check is only a coarse first
    filter. A disguised/renamed file is rejected by failing to parse with `openpyxl`
-   (`.xlsx`) / `python-docx` (`.docx`) / `PyMuPDF` (`.pdf`). `.xls` (OLE2) is accepted as a
-   stored blob — no `xlrd`, so no sheet parsing.
-4. **PDFs are slimmed to Markdown at upload (`pymupdf4llm`).** Born-digital PDFs are converted
-   to a compact Markdown artifact (text + tables) and only that `.md` is stored; the original
-   is discarded. This cuts storage and, downstream, LLM tokens. Extraction runs via
-   `anyio.to_thread.run_sync` so the event loop stays free; only the one request waits.
+   (`.xlsx`) / `python-docx` (`.docx`) / `xlrd` (`.xls`) / `PyMuPDF` (`.pdf`) — e.g. an OLE2
+   file that is really a `.doc`, not a workbook, fails `xlrd` and is rejected `422`.
+4. **Every type is slimmed to Markdown at upload.** Born-digital PDFs (`pymupdf4llm`), `.docx`
+   (`python-docx`), `.xlsx` (`openpyxl`), and `.xls` (`xlrd`) are each converted to a compact
+   Markdown artifact (text + tables; spreadsheets emit one `## {sheet}` section per sheet, with
+   very large sheets truncated and marked) and only that `.md` is stored; the original is
+   discarded. This cuts storage and, downstream, LLM tokens, and gives F-03 uniform Markdown.
+   Extraction runs via `anyio.to_thread.run_sync` so the event loop stays free; only the one
+   request waits. Spreadsheets are read `data_only=True`, so a formula cell yields its last
+   cached value (`None`/blank if the file was never opened in Excel), not the formula text.
    `pymupdf4llm` is **pinned to the lightweight `0.0.x` line** (`>=0.0.17,<0.1`): table-aware
    extraction costs ~tens of ms/page (text-heavy pages much less; dense-table pages more), so a
    typical spec is a few seconds and the largest (500–1000 pp) take tens of seconds. **Do not
    upgrade to the `1.27.x` line** — it bundles an ONNX layout model (`pymupdf-layout`) that runs
    at ~300 ms/page and makes large specs effectively hang. **Image-only PDFs are rejected fast:**
-   a cheap `get_text()` text-layer pre-check runs *before* the table detector, so a scanned /
+   a cheap `get_text()` text-layer pre-check runs _before_ the table detector, so a scanned /
    "Microsoft Print to PDF" / text-as-outlines PDF (which has no extractable text and over which
    table detection would grind for many minutes) is rejected `422` in seconds — there is **no
    OCR**. PyMuPDF/`pymupdf4llm` are **AGPL-3.0**, accepted for this internal-only tool (revisit
    on external distribution / SaaS).
-   > **Caveat:** the pre-check only short-circuits *zero-text* PDFs. A born-digital PDF that has
-   > a real (but sparse) text layer *and* heavy vector graphics still passes the pre-check and can
+   > **Caveat:** the pre-check only short-circuits _zero-text_ PDFs. A born-digital PDF that has
+   > a real (but sparse) text layer _and_ heavy vector graphics still passes the pre-check and can
    > be slow in the table-detection step. OCR for image-only PDFs is an explicit non-goal (see §10).
 5. **`doc_type` is a string column, not a DB enum.** The taxonomy will churn (new
    equipment types / sections); a DB enum would need an `ALTER TYPE` per label. Allowed
@@ -367,7 +381,7 @@ number).
    database role is **kept** — it is database least-privilege (the app's DSN connects as it),
    orthogonal to application auth. Only the auth-coupled DB objects (users table, signup
    trigger, RLS, BYPASSRLS) were removed.
-8. **Residual orphan window.** A DB failure *after* a successful storage upload would leave an
+8. **Residual orphan window.** A DB failure _after_ a successful storage upload would leave an
    orphan object (logged). This is rare and an accepted simplification versus the old
    compensating-cleanup machinery.
 
@@ -383,11 +397,13 @@ Create a bucket named `rfq-documents` (or whatever `SUPABASE_STORAGE_BUCKET` is 
 - **Private** (no public read; objects reachable only via short-TTL signed URLs).
 - **`file_size_limit`** = `MAX_STORED_ARTIFACT_MB` (a second line of defense behind the
   backend's stored-artifact guard; this is the size of what actually lands in the bucket — the
-  `.md` for PDFs).
-- **`allowed_mime_types`** must include **`text/markdown`** (slimmed PDFs are stored as `.md`),
-  the OOXML docx/xlsx types, and `application/vnd.ms-excel`. `application/pdf` may be kept but is
-  now unused (raw PDFs are never stored). **Note:** if `text/markdown` is missing, PDF uploads
-  fail with Supabase `415 invalid_mime_type`, surfaced by the endpoint as `502`.
+  `.md` artifact).
+- **`allowed_mime_types`** must include **`text/markdown`** (every _upload_ is stored as a `.md`)
+  **and** the spreadsheet OOXML type
+  **`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`** (generated **RFQ outputs**
+  are stored as `.xlsx` — see `rfq-generation.md`). No other original (PDF/DOCX/`.ms-excel`) MIME
+  type is ever written. **Note:** if a required type is missing, the affected write fails with
+  Supabase `415 invalid_mime_type`, surfaced by the endpoint as `502`.
 
 The bucket no longer needs browser CORS rules — uploads go through the backend, not the
 browser, so the browser never talks to Supabase Storage directly.
@@ -401,8 +417,8 @@ SUPABASE_SECRET_KEY=...          # server-side; used by the Storage client
 SUPABASE_STORAGE_BUCKET=rfq-documents
 
 # ── Document upload ──────────────────────────────────────
-MAX_UPLOAD_SIZE_MB=300           # incoming request-body cap (original PDF is discarded after slimming)
-MAX_STORED_ARTIFACT_MB=50        # cap on what's actually stored (the .md for PDFs); matches bucket limit
+MAX_UPLOAD_SIZE_MB=300           # incoming request-body cap (the original is discarded after slimming)
+MAX_STORED_ARTIFACT_MB=50        # cap on what's actually stored (the .md artifact); matches bucket limit
 SIGNED_DOWNLOAD_URL_TTL_S=600
 STORAGE_CLIENT_TIMEOUT_S=120     # > storage3's 20s default, for larger objects
 ALLOWED_UPLOAD_EXTENSIONS=.pdf,.docx,.xlsx,.xls
@@ -414,8 +430,8 @@ APP_USER_PASSWORD=...            # used by the migration to create the app_user 
 ```
 
 > **`APP_ENV` must be a real environment variable in non-local deploys.** It selects which
-> `.env.<APP_ENV>` file is loaded and is read from the OS environment *before* `Settings` is
-> built — so an `APP_ENV` written *inside* a dotenv file can't select that file. In production,
+> `.env.<APP_ENV>` file is loaded and is read from the OS environment _before_ `Settings` is
+> built — so an `APP_ENV` written _inside_ a dotenv file can't select that file. In production,
 > set `APP_ENV=production` as an injected env var (or, cleaner, inject all config as real env
 > vars and skip dotenv files — real env vars override dotenv anyway). The app logs the resolved
 > `APP_ENV` on startup, so a wrong-file mistake shows up immediately (it would read `local`).
@@ -454,15 +470,20 @@ uv run pytest tests/test_api/test_documents.py  # endpoint behavior via dependen
 ```
 
 Coverage of the new code:
-- **Pure:** every classification rule + revision variant; magic-byte sniffing; `plan_storage_path`.
+
+- **Pure:** every classification rule + revision variant; magic-byte sniffing; `plan_storage_path`
+  (new key layout + filename sanitization); GFM-table rendering helpers.
 - **PDF → Markdown:** `extract_pdf_markdown` against real generated text+table PDFs (table
   preserved as GFM, correct page count) and a textless PDF (`NoExtractableTextError`).
+- **Office → Markdown:** `extract_docx_markdown` (headings/paragraphs/tables, empty doc, pipe
+  escaping) and `extract_xlsx_markdown`/`extract_xls_markdown` (multi-sheet sections, type
+  formatting incl. dates → ISO, empty-sheet marker, row/col truncation marker).
 - **Validation:** `validate_upload_bytes` against real generated PDF/XLSX/DOCX fixtures
-  (PDF → `.md`/`text/markdown` artifact; office files stored as-is with their MIME), the
-  `.xls` blob path, magic mismatch (`422`), parse failure (`422`), scanned-PDF no-text (`422`),
+  (every type → `.md`/`text/markdown` artifact with the right metadata), an invalid `.xls`
+  (`422`), magic mismatch (`422`), parse failure (`422`), scanned-PDF no-text (`422`),
   the incoming-size guard (`413`), and the stored-artifact cap (`413`).
-- **Endpoints:** upload (`201` + classification/page_count; PDF stored as a `.md` `text/markdown`
-  object; sheet_names for xlsx; `415`; `422` mismatch; `422` unparseable; `422` scanned PDF;
+- **Endpoints:** upload (`201` + classification/page_count; every type stored as a `.md`
+  `text/markdown` object under the per-document key; sheet_names for xlsx; `415`; `422` mismatch; `422` unparseable; `422` scanned PDF;
   `413` oversized; `502` storage failure → nothing persisted; `404` missing project), list,
   detail (+`502` signing failure, empty-URL `502`), patch, delete (+storage-error swallow); the
   lifespan storage wiring.
@@ -496,14 +517,15 @@ uv run bandit -c pyproject.toml -r src
 
 ## 9. Risk handling (baked in)
 
-| Risk | How it's handled |
-|---|---|
-| Large/oversized upload exhausts RAM | The body is streamed to a temp file in 1 MB chunks (incoming cap aborts early at `413`), so the upload itself is RAM-bounded. The deep parse then loads the validated artifact back into memory, so peak RAM ≈ the **stored-artifact** cap (`MAX_STORED_ARTIFACT_MB`), not the larger incoming cap. |
-| `app_user` lacks DML on new tables → "permission denied" | Migration emits an explicit `GRANT … TO app_user` (guarded by a role-existence check). |
-| Content ≠ declared type (`.zip`/`.docx` renamed `.xlsx`, garbage `.pdf`) | Magic-byte gate (`422`) then the authoritative deep parse (`422`); nothing is stored. |
-| Storage object orphaned when an upload-then-DB-failure occurs | Rare; the upload happens before the insert, and a post-upload DB error is logged so the orphan is observable. |
-| Storage object orphaned when a delete's remove fails | Logged (warning) so it's observable; the row is still removed (best-effort). |
-| **Open endpoints** (no auth) | **Accepted trade-off.** Front the service with a gateway/proxy that enforces auth if exposure beyond a trusted network is needed. |
+| Risk                                                                                              | How it's handled                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Large/oversized upload exhausts RAM                                                               | The body is streamed to a temp file in 1 MB chunks (incoming cap aborts early at `413`), so the upload itself is RAM-bounded. The deep parse then loads the validated artifact back into memory, so peak RAM ≈ the **stored-artifact** cap (`MAX_STORED_ARTIFACT_MB`), not the larger incoming cap. |
+| `app_user` lacks DML on new tables → "permission denied"                                          | Migration emits an explicit `GRANT … TO app_user` (guarded by a role-existence check).                                                                                                                                                                                                              |
+| Content ≠ declared type (`.zip`/`.docx` renamed `.xlsx`, a `.doc` renamed `.xls`, garbage `.pdf`) | Magic-byte gate (`422`) then the authoritative parse-to-Markdown (`422`); nothing is stored.                                                                                                                                                                                                        |
+| Client smuggles path traversal in the filename                                                    | The storage key uses a sanitized basename (`_safe_object_name`); directory parts/separators are dropped. The raw name is still kept in `original_filename`.                                                                                                                                         |
+| Storage object orphaned when an upload-then-DB-failure occurs                                     | Rare; the upload happens before the insert, and a post-upload DB error is logged so the orphan is observable.                                                                                                                                                                                       |
+| Storage object orphaned when a delete's remove fails                                              | Logged (warning) so it's observable; the row is still removed (best-effort).                                                                                                                                                                                                                        |
+| **Open endpoints** (no auth)                                                                      | **Accepted trade-off.** Front the service with a gateway/proxy that enforces auth if exposure beyond a trusted network is needed.                                                                                                                                                                   |
 
 ---
 
@@ -513,13 +535,10 @@ uv run bandit -c pyproject.toml -r src
   at a gateway, or restore the JWT + owner-scoping layer if multi-tenant access is needed).
 - Deleting `transient` objects after RFQ generation (the `retention` tag is the hook; the
   delete fires in the Generate feature) and storing the generated RFQ output.
-- **`.docx`/`.xlsx` → Markdown at upload** (deferred; stored as-is for now). These are
-  structured (XML / cell grid), not a page-description format, so they need *different* tooling
-  than PDF — planned: `.docx` → `mammoth` (MIT), `.xlsx` → `openpyxl` (already a dep) emitting
-  one GFM table per sheet.
 - OCR for scanned / image-only PDFs (currently `422`).
 - Full-text extraction + token-aware LLM chunking (Extract/Generate feature).
-- `.xls` sheet-name parsing (would need `xlrd`); accepted/stored/validated as a blob now.
+- Richer office fidelity (DOCX images/footnotes/styling; XLSX merged-cell expansion and
+  formula-text capture) — the current converters keep text + tables, which is what F-03 needs.
 - A true batch upload endpoint (the client loops single-file uploads; the per-file pipeline is reusable).
 
 ---
@@ -533,9 +552,9 @@ bounded — and in exchange we drop the signed-upload handshake, the `status` li
 background validation task, and the recovery loop entirely.
 
 **Q: Can a renamed `.zip` (or a `.docx` saved as `.xlsx`) sneak through?**
-A: No. Magic bytes can't tell OOXML files apart (they're all ZIP), but the deep parse can:
-`openpyxl`/`python-docx`/`PyMuPDF` fail on the wrong/garbage content, the upload returns `422`,
-and nothing is stored.
+A: No. Magic bytes can't tell OOXML files apart (they're all ZIP), but the parse-to-Markdown step
+can: `openpyxl`/`python-docx`/`xlrd`/`PyMuPDF` fail on the wrong/garbage content, the upload
+returns `422`, and nothing is stored.
 
 **Q: Why is classification not done by the LLM?**
 A: It's pure filename-prefix matching per the SRS — deterministic, instant, free, and
@@ -544,7 +563,7 @@ convention.
 
 **Q: Is there really no authentication?**
 A: Correct — every endpoint is open. This is the explicit, accepted design for this branch
-(prototype/demo, or auth enforced at a gateway). The `app_user` *database* role is unrelated
+(prototype/demo, or auth enforced at a gateway). The `app_user` _database_ role is unrelated
 and is kept for database least-privilege.
 
 **Q: Why no `RFQ` table?**

@@ -11,6 +11,8 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 AppEnv = Literal["local", "dev", "test", "prod"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+# Extended-thinking ("reasoning") effort passed to OpenRouter; "none" disables thinking.
+LLMReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh"]
 
 _SYSTEM_PROMPT_FILE = Path(__file__).resolve().parents[1] / "agents" / "llm" / "system_prompt.md"
 
@@ -78,7 +80,17 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
     PRIMARY_MODEL: str = "anthropic/claude-opus-4.8"
     FALLBACK_MODEL: str = "anthropic/claude-sonnet-4.6"
-    LLM_TIMEOUT_S: float = 60.0
+    # Generous default: RFQ generation makes several large LLM calls (one per source document plus
+    # a merge), which can take many minutes. Per-request ceiling shared by primary/fallback.
+    LLM_TIMEOUT_S: float = 1800.0
+    # Extended-thinking effort for every LLM call (OpenRouter ``reasoning``). "xhigh" is the maximum
+    # (deepest reasoning, most tokens/latency); set "none" to disable thinking. Responses are always
+    # streamed so long thinking generations don't hit the provider's non-streaming window.
+    LLM_REASONING_EFFORT: LLMReasoningEffort = "xhigh"
+    # Max concurrent per-document extraction calls during map-reduce RFQ generation (bounds the
+    # async fan-out so we don't hammer the provider's rate limits). Must be >= 1: a zero/negative
+    # value yields a semaphore that never admits a task and would hang the request path.
+    RFQ_MAX_CONCURRENT_EXTRACTIONS: int = Field(default=12, ge=1)
     SYSTEM_RULES: Annotated[list[str], NoDecode] = Field(
         default_factory=_default_system_rules,
     )

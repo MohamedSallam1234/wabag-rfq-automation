@@ -18,10 +18,11 @@ classification checks, and the failure scenarios.
   Storage, classifies the filename, and returns the created document — all synchronously. A
   `201` means *validated and stored*; a `4xx` means *nothing was stored*. There is no
   `init`/`finalize`, no direct-to-Supabase PUT, and no polling.
-- **PDFs are converted to Markdown.** A born-digital PDF is slimmed to a `.md` artifact (text +
-  tables) at upload and only that is stored (`content_type=text/markdown`); the original is
-  discarded. So the `download_url` for a PDF serves Markdown, not a PDF. Scanned/image-only PDFs
-  are rejected `422` (no OCR). `.docx/.xlsx/.xls` are still stored as-is.
+- **Every supported type is converted to Markdown.** PDF/DOCX/XLSX/XLS are each slimmed to a
+  `.md` artifact (text + tables; spreadsheets emit one `## {sheet}` section per sheet) at upload
+  and only that is stored (`content_type=text/markdown`); the original is discarded. So the
+  `download_url` always serves Markdown, not the original file. Scanned/image-only PDFs are
+  rejected `422` (no OCR); empty office files yield empty/near-empty Markdown (not a rejection).
 - **The secret key** (`sb_secret_…`, in `backend/.env` as `SUPABASE_SECRET_KEY`) is used only
   by the backend to talk to Supabase Storage — never sent by a client.
 
@@ -70,10 +71,15 @@ curl -s -X POST "$BASE/api/v1/projects/$PROJECT_ID/documents" \
 # 3.3 List the project's documents (newest first)  → 200
 curl -s "$BASE/api/v1/projects/$PROJECT_ID/documents" | jq
 
-# 3.4 Fetch detail + a signed download URL  → 200. For a PDF the URL serves the .md artifact:
+# 3.3b Upload an Excel workbook → 201. It is converted to Markdown (one ## section per sheet);
+#      sheet_names is populated and content_type="text/markdown", page_count=null.
+curl -s -X POST "$BASE/api/v1/projects/$PROJECT_ID/documents" \
+  -F "file=@03_Equipment_List_Rev01.xlsx" | jq '{content_type, sheet_names, page_count}'
+
+# 3.4 Fetch detail + a signed download URL  → 200. The URL always serves the .md artifact:
 DOC_ID=$(curl -s "$BASE/api/v1/projects/$PROJECT_ID/documents" | jq -r '.[0].id')
 DL=$(curl -s "$BASE/api/v1/documents/$DOC_ID" | jq -r .download_url)
-curl -s "$DL" | head -40   # Markdown: paragraphs + GFM tables (| --- |), far smaller than the PDF
+curl -s "$DL" | head -40   # Markdown: paragraphs + GFM tables (| --- |), far smaller than the original
 
 # 3.5 Delete (also best-effort removes the storage object)  → 204
 curl -s -o /dev/null -w "%{http_code}\n" -X DELETE "$BASE/api/v1/documents/$DOC_ID"
@@ -95,9 +101,9 @@ mapping:
 |---|---|---|---|
 | `01_Employer_Technical_Specifications_Rev02.pdf` | Employer Technical Specifications | 2 | persistent |
 | `02_Process_Engineering_Rev00.pdf` | Process Engineering Profile | 0 | persistent |
-| `03_RFQ_Blower_Template_Rev01.xlsx` | RFQ Template | 1 | transient |
+| `03_Equipment_List_Rev01.xlsx` | Equipment List | 1 | persistent |
 | `04_Hydraulic_Profile.pdf` | Hydraulic Calculation Profile | – | persistent |
-| `05_Equipment_List_Rev01.xlsx` | Equipment List | 1 | persistent |
+| `05_RFQ_Blower_Template_Rev01.xlsx` | RFQ Template | 1 | transient |
 | `Centrifugal_Pump_DataSheet_Rev03.pdf` | Equipment DataSheet | 3 | transient |
 | `random_notes.pdf` | *(null)* | – | transient |
 

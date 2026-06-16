@@ -59,8 +59,9 @@ dependencies = [
     # pages in seconds). The 1.27.x line bundles an ONNX layout model (pymupdf-layout) that runs
     # at ~300 ms/page, which makes large specs effectively hang. We do NOT want that here.
     "pymupdf4llm>=0.0.17,<0.1",
-    "python-docx>=1.1", # Microsoft Word document processing
-    "openpyxl>=3.1", # Excel spreadsheet reading/writing
+    "python-docx>=1.1", # Microsoft Word document processing → Markdown at upload
+    "openpyxl>=3.1", # Modern Excel (.xlsx) reading → Markdown at upload
+    "xlrd>=2.0", # Legacy Excel (.xls) reading → Markdown at upload (pure-Python, .xls only)
     "pillow>=11.1", # Image processing (for scanned documents)
     # === External Services ===
     "httpx>=0.28", # Modern async HTTP client for LLM APIs
@@ -90,6 +91,7 @@ dev = [
     "pytest-asyncio>=0.25", # Async test support (for FastAPI endpoints)
     "pytest-cov>=6.1", # Coverage reporting
     "pypdf>=5.4", # Builds blank/textless PDF fixtures in tests (prod PDF handling uses PyMuPDF)
+    "xlwt>=1.3", # Builds legacy .xls fixtures in tests (prod .xls handling uses xlrd, read-only)
     # === Code Quality ===
     "ruff>=0.9", # Fast linter and formatter (replaces flake8, black, isort)
     "mypy>=1.14", # Static type checker
@@ -247,6 +249,12 @@ plugins = [# Third-party plugins
 # top-level ``foo`` across mypy versions, and the code does ``from openpyxl import ...``.
 [[tool.mypy.overrides]]
 module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true
+
+# xlrd ships no type information (no py.typed); ignore its missing stubs. Submodules are listed
+# alongside the top-level name (see the openpyxl note).
+[[tool.mypy.overrides]]
+module = ["xlrd", "xlrd.*"]
 ignore_missing_imports = true
 
 # PyMuPDF / pymupdf4llm ship no type information; ignore their missing stubs. Submodules and
