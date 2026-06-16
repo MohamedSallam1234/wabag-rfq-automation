@@ -307,6 +307,23 @@ def test_generate_rfq_source_download_failure_returns_502() -> None:
     proxy.upload.assert_not_awaited()
 
 
+def test_generate_rfq_non_utf8_source_returns_422() -> None:
+    project = _make_project()
+    session = _make_session(project, [_source()])
+    storage, proxy = _make_storage()
+    proxy.download = AsyncMock(return_value=b"\xff\xfebinary not markdown")
+    llm = _FakeLLM(response=_VALID_JSON)
+    _override(session, storage, llm)
+
+    client = TestClient(app)
+    response = _post(client, project.id)
+
+    # A legacy/binary source document that isn't UTF-8 Markdown → 422, before any upload.
+    assert response.status_code == 422
+    assert response.json()["detail"] == "A project source document is not valid UTF-8 Markdown"
+    proxy.upload.assert_not_awaited()
+
+
 def test_generate_rfq_output_upload_failure_returns_502() -> None:
     project = _make_project()
     session = _make_session(project, [_source()])

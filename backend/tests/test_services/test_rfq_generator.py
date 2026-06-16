@@ -1,5 +1,6 @@
 """Tests for RFQ generation orchestration: JSON parsing, status summary, end-to-end assembly."""
 
+import asyncio
 import json
 
 import pytest
@@ -60,6 +61,12 @@ def test_parse_generation_strips_code_fence() -> None:
 
 def test_parse_generation_ignores_surrounding_prose() -> None:
     text = "Here is the RFQ you asked for:\n" + json.dumps(_VALID) + "\nLet me know!"
+    assert parse_generation(text).equipment_tag == "B-100"
+
+
+def test_parse_generation_ignores_trailing_braces_in_prose() -> None:
+    # Trailing prose with stray braces must not be dragged into the JSON slice.
+    text = json.dumps(_VALID) + "\n\nNote: fill any {placeholder} fields before sending."
     assert parse_generation(text).equipment_tag == "B-100"
 
 
@@ -131,6 +138,46 @@ async def test_generate_rfq_fans_out_per_document_then_merges() -> None:
     assert "PRECEDENCE TIER 1" in merge_msgs[0]
     assert "Blower Template" in merge_msgs[0]
     assert "aeration blower" in merge_msgs[0]
+
+
+async def test_generate_rfq_cancels_pending_extractions_when_one_fails() -> None:
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class _PartialFailLLM:
+        """First extraction fails; the sibling blocks until it is cancelled."""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ask(self, user_message: str, task_instructions: str | None = None) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                await started.wait()  # let the sibling reach its blocking await first
+                raise RuntimeError("extraction boom")
+            started.set()
+            try:
+                await asyncio.Event().wait()  # block until cancelled
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+            return "{}"  # pragma: no cover - unreachable; the task is cancelled first
+
+    sources = [
+        SourceDoc(label="a", tier=1, markdown="## a"),
+        SourceDoc(label="b", tier=2, markdown="## b"),
+    ]
+    with pytest.raises(RuntimeError, match="extraction boom"):
+        await generate_rfq(
+            equipment="x",
+            template_label="t",
+            template_md="t",
+            sources=sources,
+            llm=_PartialFailLLM(),
+            max_concurrency=8,
+        )
+    # The still-pending sibling extraction was cancelled rather than left running.
+    assert cancelled.is_set()
 
 
 async def test_generate_rfq_rejects_bad_concurrency() -> None:

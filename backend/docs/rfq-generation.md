@@ -37,7 +37,7 @@ Flow:
    a **precedence tier** (see `services/rfq/precedence.py`). A project with no source documents is a
    `422`.
 3. **Map (parallel):** one LLM call per source document extracts only the template fields that
-   document supports → a *partial* `RFQGeneration`. Each emitted field carries structured provenance
+   document supports → a _partial_ `RFQGeneration`. Each emitted field carries structured provenance
    (`source_document` / `source_location` / `evidence` quote); the document's **precedence tier** is
    stamped on the prompt block. These run concurrently via `asyncio.gather` (pure async — no threads),
    bounded
@@ -56,16 +56,25 @@ Response (`201`): the created document + a status summary.
 
 ```jsonc
 {
-  "document": { /* DocumentRead — id, original_filename "RFQ_aeration_blower.xlsx", content_type, … */ },
-  "summary":  { "fields_total": 42, "extracted": 30, "conflict": 2, "tbd": 8, "vtf": 2 }
+  "document": {
+    /* DocumentRead — id, original_filename "RFQ_aeration_blower.xlsx", content_type, … */
+  },
+  "summary": {
+    "fields_total": 42,
+    "extracted": 30,
+    "conflict": 2,
+    "tbd": 8,
+    "vtf": 2,
+  },
 }
 ```
 
 Fetch the file via the existing `GET /api/v1/documents/{id}` (returns a short-lived signed URL).
 
-Status codes: `201` ok; `404` project missing; `415` unsupported template type; `422` unparseable
-template or project has no source documents (or missing `equipment`); `502` the model returned
-invalid JSON or a storage op failed; `503` the LLM is unavailable.
+Status codes: `201` ok; `400` LLM rejected the request; `404` project missing; `415` unsupported
+template type; `422` unparseable template or project has no source documents (or missing
+`equipment`); `502` the model returned invalid JSON or a storage op failed; `503` the LLM is
+unavailable.
 
 ## The `RFQGeneration` JSON contract
 
@@ -107,7 +116,7 @@ other/unclassified → Industry Standards) and is stamped onto every source/part
 explicit tier so the reduce stage applies precedence deterministically rather than guessing from
 filenames.
 
-**VTF / scope of supply.** VTF is a property of the *template field*, so the **reduce** stage decides
+**VTF / scope of supply.** VTF is a property of the _template field_, so the **reduce** stage decides
 it for every template field — including fields no source mentions (it would otherwise default them to
 `tbd`). A field is marked `vtf` when the template signals vendor scope (a Scope/Supply column,
 "(by vendor)", "supplied by", "scope of supply") **or** it is a conventionally vendor-furnished item
@@ -124,10 +133,10 @@ source columns — so a real value is never silently dropped.
 - **No template fidelity.** The output is a freshly-built `.xlsx`; the engineer's original styling,
   formulas, and merged cells are not preserved. (Follow-up: load + fill the uploaded `.xlsx` in
   place.)
-- **A single document larger than the context window.** Map-reduce bounds the *cross-document* sum,
+- **A single document larger than the context window.** Map-reduce bounds the _cross-document_ sum,
   but one document (e.g. a 1000-page spec) must still fit in its own extraction call. If it doesn't,
   that call fails. (Follow-up: intra-document chunking.) Also note the Excel empty-cell-trim fix only
-  applies to *new* uploads — **re-upload** older spreadsheets so a single sheet isn't bloated.
+  applies to _new_ uploads — **re-upload** older spreadsheets so a single sheet isn't bloated.
 - **Synchronous + slow.** The run makes N+1 large calls; wall-clock ≈ the slowest extraction + the
   merge (`LLM_TIMEOUT_S` defaults to 1800s). The worker is held for the duration and any reverse
   proxy must allow long requests. (Follow-up: background-job generation.)

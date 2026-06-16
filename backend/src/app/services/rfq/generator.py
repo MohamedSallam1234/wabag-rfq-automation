@@ -56,21 +56,27 @@ class SourceDoc:
 def parse_generation(text: str) -> RFQGeneration:
     """Parse an LLM text response into an :class:`RFQGeneration`.
 
-    Tolerant of surrounding prose or ```json code fences: the first ``{`` … last ``}`` slice is
-    taken as the JSON object.
+    Tolerant of surrounding prose or ```json code fences: scans for the first ``{`` that begins a
+    decodable JSON object (via :meth:`json.JSONDecoder.raw_decode`), so trailing prose — even prose
+    containing stray braces — is ignored rather than dragged into the slice.
 
     Raises:
-        RFQGenerationError: If no JSON object is found, or it is invalid / does not validate.
+        RFQGenerationError: If no decodable JSON object is found, or the decoded object does not
+            validate as an :class:`RFQGeneration`.
     """
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        raise RFQGenerationError("no JSON object found in the LLM response")
-    try:
-        data = json.loads(text[start : end + 1])
-        return RFQGeneration.model_validate(data)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise RFQGenerationError("the LLM response was not valid RFQ JSON") from exc
+    decoder = json.JSONDecoder()
+    for idx, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            data, _ = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            continue
+        try:
+            return RFQGeneration.model_validate(data)
+        except ValidationError as exc:
+            raise RFQGenerationError("the LLM response was not valid RFQ JSON") from exc
+    raise RFQGenerationError("no JSON object found in the LLM response")
 
 
 def summarize(generation: RFQGeneration) -> RFQSummary:
@@ -142,17 +148,28 @@ async def generate_rfq(
         raise RFQGenerationError("max_concurrency must be >= 1")
     sem = asyncio.Semaphore(max_concurrency)
     tasks = [
-        _extract_one(
-            doc,
-            equipment=equipment,
-            template_label=template_label,
-            template_md=template_md,
-            llm=llm,
-            sem=sem,
+        asyncio.create_task(
+            _extract_one(
+                doc,
+                equipment=equipment,
+                template_label=template_label,
+                template_md=template_md,
+                llm=llm,
+                sem=sem,
+            )
         )
         for doc in sources
     ]
-    extractions: list[tuple[SourceDoc, RFQGeneration]] = await asyncio.gather(*tasks)
+    try:
+        extractions: list[tuple[SourceDoc, RFQGeneration]] = await asyncio.gather(*tasks)
+    except BaseException:
+        # One extraction failed (or the request was cancelled): cancel the still-pending LLM
+        # calls so we don't burn tokens/capacity on results we're about to discard, then let the
+        # original exception propagate unchanged (gather re-raises the first one).
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
     partials = [(doc.label, doc.tier, partial.model_dump_json()) for doc, partial in extractions]
     merge_text = await llm.ask(

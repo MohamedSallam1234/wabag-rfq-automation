@@ -56,16 +56,24 @@ def _doc_label(filename: str, doc_type: str | None) -> str:
     return f"{filename} ({doc_type or 'unclassified'})"
 
 
+class SourceDecodeError(Exception):
+    """Raised when a stored source document is not valid UTF-8 Markdown."""
+
+
 async def _download_source(
     doc: Document, *, storage: AsyncStorageClient, bucket: str, sem: asyncio.Semaphore
 ) -> SourceDoc:
     """Resolve a stored project document into a :class:`SourceDoc` (download + decode Markdown)."""
     async with sem:
         raw = await storage.from_(bucket).download(doc.storage_path)
+    try:
+        markdown = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SourceDecodeError(f"Document {doc.storage_path} is not UTF-8 Markdown") from exc
     return SourceDoc(
         label=_doc_label(doc.original_filename, doc.doc_type),
         tier=precedence_tier(doc.doc_type),
-        markdown=raw.decode("utf-8"),
+        markdown=markdown,
     )
 
 
@@ -90,8 +98,8 @@ async def generate_project_rfq(  # noqa: PLR0915
     stored Markdown is downloaded. Multiple LLM calls extract data per document and one final LLM
     call merges and fills the JSON result (map-reduce); the JSON result is rendered to a fresh
     ``.xlsx``, stored, and persisted as a ``documents`` row. Errors: 415 (bad template type),
-    422 (unparseable template / no source documents), 502 (LLM produced invalid JSON or a storage
-    op failed), 503 (LLM unavailable), 404 (project missing).
+    422 (unparseable template / no source documents / non-UTF-8 source content), 502 (LLM produced
+    invalid JSON or a storage op failed), 503 (LLM unavailable), 404 (project missing).
     """
     project = await load_project_or_404(db, project_id)
     bucket = settings.SUPABASE_STORAGE_BUCKET
@@ -127,6 +135,12 @@ async def generate_project_rfq(  # noqa: PLR0915
                 for doc in db_documents
             )
         )
+    except SourceDecodeError as exc:
+        logger.warning("RFQ generation found non-markdown source content: %s", exc)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "A project source document is not valid UTF-8 Markdown",
+        ) from exc
     except StorageException as exc:
         logger.warning("RFQ generation could not read a source document: %s", exc)
         raise HTTPException(

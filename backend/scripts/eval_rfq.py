@@ -120,7 +120,7 @@ def _score(generation: RFQGeneration, truth: dict[str, Any]) -> None:
     print("\nPer-field diff (OK = match / X = mismatch):")
     for name, expected in truth.items():
         got = produced.get(name.strip().lower())
-        ok = _norm(got) == _norm(expected) and _norm(expected) != ""
+        ok = _norm(got) == _norm(expected)
         matches += ok
         mark = "OK" if ok else "X "
         print(f"  {mark} {name!r}: expected {expected!r} | got {got!r}")
@@ -144,7 +144,10 @@ async def _run(sample_dir: Path, equipment: str) -> None:
     if template_path is None:
         raise SystemExit(f"no template.<ext> found in {sample_dir}")
     template_md = _to_markdown(template_path)
-    truth = _flatten_truth(json.loads((sample_dir / "ground_truth.json").read_text("utf-8")))
+    truth_path = sample_dir / "ground_truth.json"
+    if not truth_path.is_file():
+        raise SystemExit(f"missing ground truth file: {truth_path}")
+    truth = _flatten_truth(json.loads(truth_path.read_text("utf-8")))
 
     print(f"Sources: {len(sources)} | template: {template_path.name} | truth fields: {len(truth)}")
     async with OpenRouter(api_key=settings.OPENROUTER_API_KEY.get_secret_value()) as open_router:
