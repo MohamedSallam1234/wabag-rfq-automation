@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
+from storage3.utils import StorageException
 
 from app.agents.llm.router import LLMFatalError, LLMTransientError
 from app.api.deps import get_db, get_router, get_storage
@@ -279,3 +280,37 @@ def test_generate_rfq_llm_fatal_returns_400() -> None:
     response = _post(client, project.id)
 
     assert response.status_code == 400
+
+
+def test_generate_rfq_source_download_failure_returns_502() -> None:
+    project = _make_project()
+    session = _make_session(project, [_source()])
+    storage, proxy = _make_storage()
+    proxy.download = AsyncMock(side_effect=StorageException("source object missing"))
+    llm = _FakeLLM(response=_VALID_JSON)
+    _override(session, storage, llm)
+
+    client = TestClient(app)
+    response = _post(client, project.id)
+
+    # A source document whose bytes can't be downloaded → 502, before any upload.
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Could not read a source document"
+    proxy.upload.assert_not_awaited()
+
+
+def test_generate_rfq_output_upload_failure_returns_502() -> None:
+    project = _make_project()
+    session = _make_session(project, [_source()])
+    storage, proxy = _make_storage()
+    proxy.upload = AsyncMock(side_effect=StorageException("bucket write rejected"))
+    llm = _FakeLLM(response=_VALID_JSON)
+    _override(session, storage, llm)
+
+    client = TestClient(app)
+    response = _post(client, project.id)
+
+    # Generation succeeds but storing the rendered .xlsx fails → 502; no document row persisted.
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Could not store the generated RFQ"
+    session.add.assert_not_called()
