@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from openrouter import OpenRouter
 
 from app.agents.llm.router import LLMFatalError, LLMRouter, LLMTransientError, build_router
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     """Create the FastAPI app factory pattern."""
+    settings = get_settings()
     app = FastAPI(
         title="WABAG RFQ Automation",
         description="Backend for RFQ document intake, classification, and generation.",
@@ -52,6 +54,18 @@ def create_app() -> FastAPI:
         license_info={"name": "MIT"},
         lifespan=lifespan,
     )
+
+    # Allow browser clients (the React frontend dev server, and any deployed SPA origin)
+    # to call the API cross-origin. Only wired when CORS_ORIGINS is configured, so test
+    # fixtures that never set it stay unaffected.
+    if settings.CORS_ORIGINS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     @app.get("/health", tags=["meta"])
     def health(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, str]:
