@@ -8,6 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
   # Supabase test configuration (local test values)
   SUPABASE_URL: http://localhost:54321
   SUPABASE_PUBLISHABLE_KEY: sb_publishable_test  # pragma: allowlist secret
@@ -76,3 +77,22 @@ jobs:
         working-directory: backend
       - run: uv build
         working-directory: backend
+
+  # Frontend — lint, typecheck, and build the React SPA.
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
