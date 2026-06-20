@@ -19,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { RfqSummaryCard } from "./RfqSummaryCard";
 import { useGenerateRfq } from "@/hooks/use-rfqs";
 import { ApiError } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 import type { RfqGenerationResponse, Uuid } from "@/lib/api/types";
 
 const ACCEPTED = ".pdf,.docx,.xlsx,.xls";
@@ -106,7 +107,7 @@ export function GenerateRfqDialog({ projectId }: GenerateRfqDialogProps) {
           <RfqSummaryCard summary={result.summary} />
         ) : (
           <div className="space-y-4">
-            <Alert>
+            <Alert variant="warning">
               <Clock className="h-4 w-4" />
               <AlertTitle>This can take a while</AlertTitle>
               <AlertDescription>
@@ -142,15 +143,20 @@ export function GenerateRfqDialog({ projectId }: GenerateRfqDialogProps) {
                 }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={onDrop}
-                className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
-                  dragging ? "border-primary bg-accent/40" : "border-input"
-                }`}
+                className={cn(
+                  "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-control border-2 border-dashed p-6 text-center transition-colors",
+                  dragging
+                    ? "border-info bg-info-soft/50"
+                    : "border-border-strong hover:border-info/60",
+                )}
               >
-                <UploadCloud className="h-6 w-6 text-muted-foreground" />
+                <UploadCloud className="h-6 w-6 text-text-muted" />
                 {file ? (
-                  <p className="text-sm font-medium">{file.name}</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {file.name}
+                  </p>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-text-muted">
                     Drop the template here or click to browse
                   </p>
                 )}

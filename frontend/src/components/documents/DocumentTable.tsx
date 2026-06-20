@@ -31,7 +31,7 @@ import {
   type DocumentRead,
   type Uuid,
 } from "@/lib/api/types";
-import { formatBytes, formatDate } from "@/lib/utils";
+import { cn, formatBytes, formatDate } from "@/lib/utils";
 
 interface DocumentTableProps {
   projectId: Uuid;
@@ -41,12 +41,12 @@ interface DocumentTableProps {
 
 function fileIcon(contentType: string) {
   if (contentType.includes("sheet") || contentType.includes("excel")) {
-    return <Sheet className="h-4 w-4" />;
+    return <Sheet className="h-4 w-4 text-text-muted" />;
   }
   if (contentType.includes("pdf")) {
-    return <FileText className="h-4 w-4" />;
+    return <FileText className="h-4 w-4 text-text-muted" />;
   }
-  return <File className="h-4 w-4" />;
+  return <File className="h-4 w-4 text-text-muted" />;
 }
 
 /** Download handler: fetch the signed URL via getDocument, then open it. */
@@ -89,10 +89,10 @@ export function DocumentTable({
   };
 
   return (
-    <div className="rounded-lg border">
+    <div className="overflow-hidden rounded-card border border-border">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableHead className="w-[40%]">File</TableHead>
             <TableHead>Classification</TableHead>
             <TableHead>Revision</TableHead>
@@ -104,7 +104,7 @@ export function DocumentTable({
         <TableBody>
           {isLoading &&
             Array.from({ length: 3 }).map((_, i) => (
-              <TableRow key={i}>
+              <TableRow key={i} className="hover:bg-transparent">
                 {Array.from({ length: 6 }).map((__, j) => (
                   <TableCell key={j}>
                     <Skeleton className="h-5 w-full" />
@@ -114,12 +114,14 @@ export function DocumentTable({
             ))}
 
           {!isLoading && documents?.length === 0 && (
-            <TableRow>
-              <TableCell
-                colSpan={6}
-                className="py-10 text-center text-muted-foreground"
-              >
-                No documents uploaded yet.
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={6} className="py-12 text-center">
+                <div className="flex flex-col items-center gap-2 text-text-muted">
+                  <FileText className="h-7 w-7" aria-hidden="true" />
+                  <p className="text-sm">
+                    No documents uploaded yet. Drop a file above to get started.
+                  </p>
+                </div>
               </TableCell>
             </TableRow>
           )}
@@ -139,11 +141,18 @@ export function DocumentTable({
                     <div className="flex items-center gap-2">
                       {fileIcon(doc.content_type)}
                       <div className="min-w-0">
-                        <p className="truncate font-medium">
+                        <p
+                          className={cn(
+                            "truncate font-medium",
+                            isGenerated
+                              ? "text-text-primary"
+                              : "text-text-secondary",
+                          )}
+                        >
                           {doc.original_filename}
                         </p>
                         {pagesOrSheets && (
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-text-muted">
                             {pagesOrSheets}
                           </p>
                         )}
@@ -158,25 +167,24 @@ export function DocumentTable({
                   </TableCell>
                   <TableCell>
                     {doc.revision_label ? (
-                      <span className="font-mono text-xs">
+                      <span className="font-mono text-xs text-text-secondary">
                         {doc.revision_label}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-text-muted">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-text-muted tabular-nums">
                     {formatBytes(doc.size_bytes)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-text-muted">
                     {formatDate(doc.created_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="iconSm"
                         onClick={() => void handleDownload(doc.id)}
                         aria-label="Download"
                       >
@@ -191,8 +199,8 @@ export function DocumentTable({
                       )}
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        size="iconSm"
+                        className="text-danger hover:text-danger"
                         onClick={() => setToDelete(doc)}
                         aria-label="Delete"
                       >

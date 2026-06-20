@@ -7,3 +7,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// @fontsource-variable/inter ships CSS only (no type declarations).
+declare module "@fontsource-variable/inter";

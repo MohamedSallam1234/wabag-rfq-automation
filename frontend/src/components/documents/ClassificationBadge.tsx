@@ -9,9 +9,9 @@ interface ClassificationBadgeProps {
 }
 
 /**
- * Shows the document's classification with a color hint + an auto/manual tag.
- * Generated RFQ outputs (doc_type = "RFQ Package") get a distinct color so
- * they stand out from source documents.
+ * Shows the document's classification with a semantic pill + an auto/manual
+ * tag. Generated RFQ outputs (doc_type = "RFQ Package") use the success tone
+ * so they stand out from source documents.
  */
 export function ClassificationBadge({
   docType,
@@ -29,16 +29,11 @@ export function ClassificationBadge({
   const isGenerated = docType === GENERATED_DOC_TYPE;
   return (
     <span className={cn("inline-flex items-center gap-1", className)}>
-      <Badge variant={isGenerated ? "secondary" : "outline"}>{docType}</Badge>
+      <Badge variant={isGenerated ? "success" : "outline"}>{docType}</Badge>
       {!isGenerated && (
         <Badge
-          variant="outline"
-          className={cn(
-            "text-[10px]",
-            source === "manual"
-              ? "border-amber-400 text-amber-700"
-              : "text-muted-foreground",
-          )}
+          variant={source === "manual" ? "warning" : "outline"}
+          className="text-[10px]"
         >
           {source}
         </Badge>

@@ -5,6 +5,7 @@ import { UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUploadDocument } from "@/hooks/use-documents";
 import { ApiError } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 import type { Uuid } from "@/lib/api/types";
 
 const ACCEPTED = ".pdf,.docx,.xlsx,.xls";
@@ -56,18 +57,21 @@ export function DocumentUpload({ projectId }: DocumentUploadProps) {
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
-      className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
-        dragging ? "border-primary bg-accent/40" : "border-input"
-      }`}
+      className={cn(
+        "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-control border-2 border-dashed p-8 text-center transition-colors",
+        dragging
+          ? "border-info bg-info-soft/50"
+          : "border-border-strong hover:border-info/60",
+      )}
     >
-      <UploadCloud className="h-8 w-8 text-muted-foreground" />
-      <p className="text-sm font-medium">
+      <UploadCloud className="h-8 w-8 text-text-muted" />
+      <p className="text-sm font-medium text-text-primary">
         Drop a file here, or click to browse
       </p>
-      <p className="text-xs text-muted-foreground">
-        PDF, DOCX, XLSX, XLS — up to 20 files per batch, 500MB total
+      <p className="text-xs text-text-muted">
+        One file at a time. PDF, DOCX, XLSX, XLS.
       </p>
-      {upload.isPending && <p className="text-xs text-primary">Uploading…</p>}
+      {upload.isPending && <p className="text-xs text-info">Uploading…</p>}
       <input
         ref={inputRef}
         type="file"

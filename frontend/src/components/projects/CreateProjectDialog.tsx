@@ -82,7 +82,7 @@ export function CreateProjectDialog() {
       <DialogTrigger asChild>
         <Button>
           <Plus className="h-4 w-4" />
-          New project
+          New Project
         </Button>
       </DialogTrigger>
       <DialogContent>

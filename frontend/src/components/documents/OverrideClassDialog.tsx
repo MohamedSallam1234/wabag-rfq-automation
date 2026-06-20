@@ -66,7 +66,7 @@ export function OverrideClassDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
+        <Button variant="ghost" size="iconSm">
           <Pencil className="h-3.5 w-3.5" />
           <span className="sr-only">Override classification</span>
         </Button>

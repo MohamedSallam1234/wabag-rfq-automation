@@ -2,50 +2,111 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * WABAG RFQ Automation — design tokens (DESIGN.md §3-6).
+ * All colors are stored as HSL channel triplets so shadcn's
+ * `hsl(var(--token))` and `hsl(var(--token) / <opacity>)` modifiers work.
+ * Hex sources are noted inline; hex values are the source of truth.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* shadcn semantic slots, remapped to the WABAG palette */
+    --background: 220 21% 97%; /* #F7F8FA app bg */
+    --foreground: 222 45% 16%; /* #16213A text primary */
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 222 45% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 222 45% 16%;
+    --primary: 216 64% 16%; /* #0F2444 navy-800 */
+    --primary-foreground: 214 44% 94%; /* #E8EEF6 text on navy */
+    --secondary: 218 21% 95%; /* surface-subtle-ish */
+    --secondary-foreground: 222 45% 16%;
+    --muted: 218 21% 95%;
+    --muted-foreground: 217 14% 41%; /* #5B6678 text secondary */
+    --accent: 218 21% 95%;
+    --accent-foreground: 222 45% 16%;
+    --destructive: 0 84% 60%; /* #EF4444 danger */
+    --destructive-foreground: 0 0% 100%;
+    --border: 218 21% 92%; /* #E8EBF0 */
+    --input: 218 18% 86%; /* #D5DAE2 border-strong */
+    --ring: 214 65% 33%; /* #1E4D8C navy-600 */
+    --radius: 0.75rem; /* 12px cards */
+
+    /* navy / brand */
+    --navy-900: 217 70% 14%; /* #0B1E3D */
+    --navy-800: 216 64% 16%; /* #0F2444 */
+    --navy-700: 215 67% 25%; /* #15396A */
+    --navy-600: 214 65% 33%; /* #1E4D8C */
+
+    /* surfaces */
+    --surface: 0 0% 100%; /* #FFFFFF */
+    --surface-subtle: 210 40% 99%; /* #FBFCFD */
+    --border-strong: 218 18% 86%; /* #D5DAE2 */
+
+    /* text */
+    --text-primary: 222 45% 16%; /* #16213A */
+    --text-secondary: 217 14% 41%; /* #5B6678 */
+    --text-muted: 219 14% 60%; /* #8A94A6 */
+    --text-on-navy: 214 44% 94%; /* #E8EEF6 */
+    --text-on-navy-muted: 215 28% 66%; /* #8FA3C0 */
+
+    /* semantic solids */
+    --info: 217 91% 60%; /* #3B82F6 */
+    --success: 142 76% 36%; /* #16A34A */
+    --warning: 38 92% 50%; /* #F59E0B */
+    --extraction: 252 96% 67%; /* #7C5CFC */
+    --danger: 0 84% 60%; /* #EF4444 */
+    --low: 25 95% 53%; /* #F97316 */
+
+    /* semantic soft tints (badge / tile backgrounds) */
+    --info-soft: 216 91% 96%; /* #EAF2FE */
+    --success-soft: 140 46% 94%; /* #E7F6EC */
+    --warning-soft: 39 93% 94%; /* #FEF4E2 */
+    --extraction-soft: 257 90% 96%; /* #F1ECFE */
+    --danger-soft: 0 79% 96%; /* #FDEEEE */
+    --low-soft: 27 93% 94%; /* #FEEFE3 */
+
+    /* accent */
+    --avatar: 180 72% 21%; /* #0F5C5C teal */
+    --link: 214 65% 33%; /* #1E4D8C */
+
+    /* shape */
+    --radius-control: 0.5rem; /* 8px */
+    --radius-tile: 0.625rem; /* 10px */
+    --radius-pill: 999px;
+    --shadow-card: 0 1px 2px rgba(16, 33, 58, 0.04),
+      0 1px 3px rgba(16, 33, 58, 0.06);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* Dark surfaces derived from the navy brand (DESIGN.md §11.6).
+       No toggle is wired yet; this keeps a future dark mode consistent. */
+    --background: 213 40% 10%; /* #0E1726 */
+    --foreground: 214 44% 94%;
+    --card: 215 45% 16%; /* #15233B */
+    --card-foreground: 214 44% 94%;
+    --popover: 215 45% 16%;
+    --popover-foreground: 214 44% 94%;
+    --primary: 214 65% 33%;
+    --primary-foreground: 214 44% 94%;
+    --secondary: 215 30% 22%;
+    --secondary-foreground: 214 44% 94%;
+    --muted: 215 30% 22%;
+    --muted-foreground: 215 18% 66%;
+    --accent: 215 30% 24%;
+    --accent-foreground: 214 44% 94%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 214 44% 94%;
+    --border: 215 30% 26%;
+    --input: 215 30% 30%;
+    --ring: 214 65% 45%;
+
+    --surface: 215 45% 16%;
+    --surface-subtle: 215 40% 20%;
+    --border-strong: 215 30% 30%;
+    --text-primary: 214 44% 94%;
+    --text-secondary: 215 20% 72%;
+    --text-muted: 215 18% 60%;
   }
 }
 
@@ -53,7 +114,39 @@
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "tnum" 1, "cv05" 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible keyboard focus on light surfaces (DESIGN.md §9) */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Respect reduced-motion: keep transitions short, drop shimmer */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Soft card elevation — flat-with-hairlines, not floaty (DESIGN.md §6) */
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Sidebar hover/active overlays on navy */
+  .navy-hover {
+    background-color: rgba(255, 255, 255, 0.06);
   }
 }
