@@ -127,6 +127,11 @@ async def generate_project_rfq(  # noqa: PLR0915
         or_(Document.doc_type.is_(None), Document.doc_type != GENERATED_DOC_TYPE),
     )
     db_documents = (await db.execute(stmt)).scalars().all()
+    # Release the pooled DB connection before the multi-minute generation below: holding it
+    # idle-in-transaction across the LLM calls lets Postgres/Supabase reap it, which then crashes
+    # the final flush/rollback. The session transparently reacquires a fresh (pre-pinged) connection
+    # for the INSERT; detached project/document rows stay readable (expire_on_commit=False).
+    await db.close()
     sem = asyncio.Semaphore(settings.RFQ_MAX_CONCURRENT_EXTRACTIONS)
     try:
         sources = await asyncio.gather(

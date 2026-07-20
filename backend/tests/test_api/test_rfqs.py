@@ -76,6 +76,7 @@ def _make_session(project: Project | None, sources: list[object]) -> MagicMock:
     session = MagicMock()
     session.flush = AsyncMock()
     session.refresh = AsyncMock(side_effect=_fake_refresh)
+    session.close = AsyncMock()
     session.get = AsyncMock(return_value=project)
     result = MagicMock()
     result.scalars.return_value.all.return_value = sources
@@ -188,6 +189,29 @@ def test_generate_rfq_fans_out_one_call_per_source_plus_merge() -> None:
     # 3 source documents → 3 extraction calls + 1 merge call; each source downloaded once.
     assert len(llm.calls) == len(sources) + 1
     assert proxy.download.await_count == len(sources)
+
+
+def test_generate_rfq_releases_db_connection_before_generation() -> None:
+    # Regression: the handler must release (close) the pooled DB connection BEFORE the long
+    # generation, so a slow run can't hold it idle-in-transaction until Postgres/Supabase reaps it
+    # (which previously crashed the final flush/rollback and turned the 502 path into a 500).
+    project = _make_project()
+    session = _make_session(project, [_source()])
+    storage, _ = _make_storage()
+
+    class _AssertClosedLLM(_FakeLLM):
+        async def ask(self, user_message: str, task_instructions: str | None = None) -> str:
+            session.close.assert_awaited()  # connection already released before any LLM call
+            return await super().ask(user_message, task_instructions)
+
+    llm = _AssertClosedLLM(response=_VALID_JSON)
+    _override(session, storage, llm)
+
+    client = TestClient(app)
+    response = _post(client, project.id)
+
+    assert response.status_code == 201
+    session.close.assert_awaited_once()
 
 
 def test_generate_rfq_missing_project_returns_404() -> None:
