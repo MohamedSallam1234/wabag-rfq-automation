@@ -80,6 +80,20 @@ def test_parse_generation_malformed_json_raises() -> None:
         parse_generation("{ not: valid json }")
 
 
+def test_parse_generation_skips_leading_non_rfq_json() -> None:
+    # A reasoning/thinking stream can emit intermediate JSON before the final datasheet;
+    # parse_generation must skip decodable-but-invalid objects and return the first valid one.
+    text = 'draft: {"sections": "not a list yet"}\nfinal answer:\n' + json.dumps(_VALID)
+    assert parse_generation(text).equipment_tag == "B-100"
+
+
+def test_parse_generation_decodable_but_non_rfq_raises() -> None:
+    # A decodable JSON object that doesn't validate as an RFQGeneration (with no valid one to
+    # follow) raises RFQGenerationError.
+    with pytest.raises(RFQGenerationError):
+        parse_generation('{"sections": "not a list"}')
+
+
 def test_summarize_counts_statuses() -> None:
     summary = summarize(parse_generation(json.dumps(_VALID)))
     assert summary.fields_total == 4

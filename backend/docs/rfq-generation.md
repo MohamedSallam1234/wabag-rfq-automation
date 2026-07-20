@@ -138,8 +138,8 @@ source columns — so a real value is never silently dropped.
   that call fails. (Follow-up: intra-document chunking.) Also note the Excel empty-cell-trim fix only
   applies to _new_ uploads — **re-upload** older spreadsheets so a single sheet isn't bloated.
 - **Synchronous + slow.** The run makes N+1 large calls; wall-clock ≈ the slowest extraction + the
-  merge (`LLM_TIMEOUT_S` defaults to 1800s). The worker is held for the duration and any reverse
-  proxy must allow long requests. (Follow-up: background-job generation.)
+  merge. There is no client-side timeout (OpenRouter governs it), so the worker is held for the full
+  duration and any reverse proxy must allow long requests. (Follow-up: background-job generation.)
 - **Cost.** N+1 calls and the (small) template is repeated per call.
 - **One equipment per call.** (Follow-up: batch multiple templates.)
 
