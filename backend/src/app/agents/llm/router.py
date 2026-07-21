@@ -18,7 +18,7 @@ from openrouter.components import (
 from openrouter.errors import NoResponseError, OpenRouterError
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import LLMReasoningEffort, Settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class ClaudeClient:
         open_router: OpenRouter,
         model: str,
         rules: list[str],
-        reasoning_effort: str = "none",
+        reasoning_effort: LLMReasoningEffort = "none",
     ) -> None:
         """Bind the client to a shared :class:`OpenRouter` SDK instance and one model.
 
