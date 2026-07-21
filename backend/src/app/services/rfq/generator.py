@@ -72,7 +72,10 @@ def parse_generation(text: str) -> RFQGeneration:
         if ch != "{":
             continue
         try:
-            data, _ = decoder.raw_decode(text[idx:])
+            # Decode in place from ``idx`` rather than slicing ``text[idx:]``: the scan can visit
+            # every ``{`` in a large response (each nested one, once an outer object decodes but
+            # fails validation), so slicing would copy the tail of the string on each attempt.
+            data, _ = decoder.raw_decode(text, idx)
         except json.JSONDecodeError:
             continue
         try:
