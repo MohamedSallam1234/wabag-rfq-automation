@@ -76,13 +76,13 @@ class Settings(BaseSettings):
         default_factory=lambda: [".pdf", ".docx", ".xlsx", ".xls"],
     )
 
-    # LLM (OpenRouter — Claude Opus 4.7 primary, Sonnet 4.6 fallback)
+    # LLM (OpenRouter — Claude Opus 4.8 primary, Sonnet 4.6 fallback)
     OPENROUTER_API_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
     PRIMARY_MODEL: str = "anthropic/claude-opus-4.8"
     FALLBACK_MODEL: str = "anthropic/claude-sonnet-4.6"
-    # Generous default: RFQ generation makes several large LLM calls (one per source document plus
-    # a merge), which can take many minutes. Per-request ceiling shared by primary/fallback.
-    LLM_TIMEOUT_S: float = 1800.0
+    # No client-side LLM timeout: RFQ generation makes several large, long-running streamed calls
+    # and OpenRouter enforces its own server-side timeout, so the SDK is invoked without
+    # ``timeout_ms`` (httpx then applies no timeout — see app.agents.llm.router).
     # Extended-thinking effort for every LLM call (OpenRouter ``reasoning``). "xhigh" is the maximum
     # (deepest reasoning, most tokens/latency); set "none" to disable thinking. Responses are always
     # streamed so long thinking generations don't hit the provider's non-streaming window.

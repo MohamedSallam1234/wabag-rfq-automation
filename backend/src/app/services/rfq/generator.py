@@ -57,25 +57,34 @@ def parse_generation(text: str) -> RFQGeneration:
     """Parse an LLM text response into an :class:`RFQGeneration`.
 
     Tolerant of surrounding prose or ```json code fences: scans for the first ``{`` that begins a
-    decodable JSON object (via :meth:`json.JSONDecoder.raw_decode`), so trailing prose — even prose
-    containing stray braces — is ignored rather than dragged into the slice.
+    decodable JSON object (via :meth:`json.JSONDecoder.raw_decode`) which also validates as an
+    :class:`RFQGeneration`. Decodable objects that don't validate are skipped rather than fatal —
+    this matters when the text is a reasoning/thinking stream that contains intermediate JSON
+    fragments before the final datasheet (see :mod:`app.agents.llm.router`).
 
     Raises:
-        RFQGenerationError: If no decodable JSON object is found, or the decoded object does not
+        RFQGenerationError: If no decodable JSON object is found, or none of the decoded objects
             validate as an :class:`RFQGeneration`.
     """
     decoder = json.JSONDecoder()
+    last_error: ValidationError | None = None
     for idx, ch in enumerate(text):
         if ch != "{":
             continue
         try:
-            data, _ = decoder.raw_decode(text[idx:])
+            # Decode in place from ``idx`` rather than slicing ``text[idx:]``: the scan can visit
+            # every ``{`` in a large response (each nested one, once an outer object decodes but
+            # fails validation), so slicing would copy the tail of the string on each attempt.
+            data, _ = decoder.raw_decode(text, idx)
         except json.JSONDecodeError:
             continue
         try:
             return RFQGeneration.model_validate(data)
         except ValidationError as exc:
-            raise RFQGenerationError("the LLM response was not valid RFQ JSON") from exc
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise RFQGenerationError("the LLM response was not valid RFQ JSON") from last_error
     raise RFQGenerationError("no JSON object found in the LLM response")
 
 

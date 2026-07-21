@@ -10,7 +10,7 @@ and falls back from Opus to Sonnet on transient failures.
 
 | File                                   | Purpose                                                                                                                                                             |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/core/config.py`               | Adds `OPENROUTER_API_KEY`, `PRIMARY_MODEL`, `FALLBACK_MODEL`, `LLM_TIMEOUT_S`, and the env-overridable `SYSTEM_RULES` (the F-04 rule list) to the typed `Settings`. |
+| `src/app/core/config.py`               | Adds `OPENROUTER_API_KEY`, `PRIMARY_MODEL`, `FALLBACK_MODEL`, `LLM_REASONING_EFFORT`, and the env-overridable `SYSTEM_RULES` (the F-04 rule list) to the typed `Settings`. |
 | `src/app/agents/llm/router.py`         | Single-file LLM module: `build_system_prompt`, `ClaudeClient`, `LLMRouter`, `build_router`, and the two exception types.                                            |
 | `src/app/api/deps.py`                  | New `get_router()` FastAPI dependency that returns the process-wide router.                                                                                         |
 | `src/app/main.py`                      | `lifespan` that creates **one** shared `OpenRouter` SDK client + `LLMRouter` and stashes them on `app.state`, plus a `GET /llm/ping` smoke endpoint.                |
@@ -56,6 +56,12 @@ and falls back from Opus to Sonnet on transient failures.
    - Timeouts, transport errors, 429, 5xx → `LLMTransientError` → router tries fallback.
    - 400 / 401 / 404 / other 4xx → `LLMFatalError` → re-raised immediately.
      A 400 from Opus would be a 400 from Sonnet too — don't waste tokens on caller bugs.
+   - **In-stream errors** (this matters for non-Anthropic models): OpenRouter reports errors that
+     occur *after* the 200/stream has started as an in-band chunk (`chunk.error`, or a choice with
+     `finish_reason == "error"`), not as a raised error. `ClaudeClient.ask` inspects these while
+     streaming and classifies them the same way, so a transient in-stream error still falls back;
+     previously they were swallowed and misreported as "returned no content". If a model *rejects*
+     the `reasoning` param outright, set `LLM_REASONING_EFFORT=none` for that deployment.
 5. **One shared `OpenRouter` SDK client for the whole app**, created in
    `lifespan` (entered as an async context manager) and reused for every
    request. The SDK owns its own httpx connection pool; per-request clients
@@ -75,7 +81,6 @@ and falls back from Opus to Sonnet on transient failures.
 OPENROUTER_API_KEY=sk-or-v1-...           # REQUIRED — get from https://openrouter.ai/keys
 PRIMARY_MODEL=anthropic/claude-opus-4.7   # optional, this is the default
 FALLBACK_MODEL=anthropic/claude-sonnet-4.6 # optional, this is the default
-LLM_TIMEOUT_S=60.0                        # optional
 
 # Optional — pipe-separated. If unset, defaults from config.py are used.
 # SYSTEM_RULES=Be concise.|Return JSON when asked.|Never invent values.
@@ -127,7 +132,7 @@ uv run pytest
 What's covered (router tests + config tests for SYSTEM_RULES):
 
 - request carries the F-04 system prompt and task instructions in `messages[0]`
-- `model` and `timeout_ms` kwargs are forwarded to the SDK
+- `model` kwarg is forwarded to the SDK; no client-side `timeout_ms` is sent
 - 429 / 500 / 502 / 503 (raised as `OpenRouterError` with that status) →
   `LLMTransientError` (parametrized)
 - 400 / 401 / 404 (raised as `OpenRouterError` with that status) →
@@ -283,9 +288,10 @@ A: It's a leftover docstring stub from the initial scaffold. Harmless;
 delete in a cleanup pass.
 
 **Q: Where does timeout get enforced?**
-A: Per-call, via the SDK's `timeout_ms` kwarg on `chat.send_async`. We
-convert `LLM_TIMEOUT_S` (seconds, float) to milliseconds (int) at the call
-site so each request gets the same configured budget.
+A: It isn't, client-side. `chat.send_async` is called without `timeout_ms`, so
+the SDK passes httpx `timeout=None` (no client timeout) and OpenRouter's own
+server-side timeout governs the request. RFQ generation streams for many
+minutes, so a client-side timeout only ever caused premature failures.
 
 **Q: How is the API key kept out of logs?**
 A: `OPENROUTER_API_KEY` is typed as `pydantic.SecretStr`. `repr(settings)`
